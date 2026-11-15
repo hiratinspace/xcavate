@@ -32,8 +32,6 @@ The information you need is often scattered across checkout screens, privacy pol
 
 **Xcavate is a browser companion that brings those risks into view before you click, share, or pay.** It highlights fees and subscription commitments, explains important policy terms with exact supporting quotes, and helps you act with reminders and cancellation guidance. We’re also building site-reputation and phishing checks into that same experience.
 
-The scale is real. In 2025, the FBI recorded **$215.8 million in reported phishing and spoofing losses**, and **$503.4 million in non-payment/non-delivery losses** (a category covering buyers not receiving purchases and sellers not receiving payment). Separately, a 2024 global privacy sweep found deceptive design that could influence people to share more personal information in **97% of more than 1,000 websites and apps reviewed**. That percentage describes the reviewed sample, not every website. Sources: [FBI IC3, pages 7–8](https://www.ic3.gov/AnnualReport/Reports/2025_IC3Report.pdf), [GPEN privacy sweep](https://www.priv.gc.ca/en/opc-news/news-and-announcements/2024/nr-c_240709/).
-
 
 ## What it does
 
