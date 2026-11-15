@@ -27,7 +27,8 @@ export type Message =
   /** bg → content: status changed (e.g. error), so the card can hide its "checking" state. */
   | { type: "STATUS"; status: TabStatus };
 
-export interface PageReadyReply { report?: Report }
+/** paused: extension disabled or site paused (U-04); the content script then does nothing at all. */
+export interface PageReadyReply { report?: Report; paused?: boolean }
 export interface FetchHtmlReply { ok: boolean; html?: string; status?: number; finalUrl?: string }
 export interface AnalyzeReply { ok: boolean; report?: Report; error?: string }
 export interface OkReply { ok: boolean; error?: string }

@@ -1,0 +1,194 @@
+import {
+  MSG,
+  domainOf,
+  normalizeForHash,
+  sha256Hex,
+  type AnalyzeReply,
+  type AnalyzeRequest,
+  type FetchHtmlReply,
+  type Message,
+  type OkReply,
+  type PageReadyReply,
+  type Report,
+  type TabState,
+} from "@xcavate/shared";
+import { fetchCapped } from "../lib/fetchCapped";
+import { buildAnalyzeRequest } from "../lib/request";
+import { isActiveFor, loadSettings } from "../lib/settings";
+import { lookupReport, postAnalyze } from "./api";
+import { setBadge } from "./badge";
+import { getCachedReport, getPolicyHash, getTab, patchTab, saveReport, setPolicyHash, setTab } from "./state";
+
+/** Service-worker message handlers (BUILD_PLAN 6.3), separated from listener wiring for tests. */
+
+export interface Deps {
+  fetchImpl?: typeof fetch;
+  now?: () => number;
+}
+
+export function createHandlers(deps: Deps = {}) {
+  const fetchImpl = deps.fetchImpl ?? ((...a: Parameters<typeof fetch>) => globalThis.fetch(...a));
+  const now = deps.now ?? Date.now;
+  /** In-flight de-duplication: one backend call per domain + policy set at a time. */
+  const inflight = new Map<string, Promise<Report>>();
+
+  async function notifyTab(tabId: number | undefined, msg: Message) {
+    if (tabId === undefined || tabId < 0) return;
+    try {
+      await chrome.tabs.sendMessage(tabId, msg);
+    } catch {
+      /* no content script there (yet) */
+    }
+  }
+
+  async function pageReady(msg: Extract<Message, { type: "PAGE_READY" }>, tabId?: number): Promise<PageReadyReply> {
+    const domain = domainOf(msg.url);
+    const settings = await loadSettings();
+    if (!isActiveFor(settings, domain)) {
+      if (tabId !== undefined) await setTab(tabId, { status: "idle", domain, pageType: msg.pageType });
+      await setBadge(tabId, undefined, "idle");
+      return { paused: true };
+    }
+    if (msg.pageType === "none") {
+      if (tabId !== undefined) await setTab(tabId, { status: "idle", domain, pageType: "none" });
+      await setBadge(tabId, undefined, "idle");
+      return {};
+    }
+    const cached = await getCachedReport(domain, now());
+    if (cached) {
+      if (tabId !== undefined) await setTab(tabId, { status: "ready", domain, pageType: msg.pageType });
+      await setBadge(tabId, cached, "ready");
+      return { report: cached };
+    }
+    if (tabId !== undefined) await setTab(tabId, { status: "checking", domain, pageType: msg.pageType });
+    await setBadge(tabId, undefined, "checking");
+    // F-06 instant path: a shared report from the backend, shown at once; the content script
+    // still sends ANALYZE, which refreshes it if the policy text changed.
+    const remote = await lookupReport(settings.apiBase, domain, { fetchImpl });
+    if (remote) {
+      await saveReport(remote, now());
+      if (tabId !== undefined) await patchTab(tabId, { status: "ready" });
+      await setBadge(tabId, remote, "ready");
+      return { report: remote };
+    }
+    return {};
+  }
+
+  /** Same text as last time for every policy → the cached report still holds; no backend call. */
+  function cacheStillValid(cached: Report, req: AnalyzeRequest, hashes: string[]): boolean {
+    if (!req.policies.length) return false;
+    return req.policies.every((p, i) => {
+      const meta = cached.policies.find((m) => m.url === p.url);
+      if (!p.text) return !meta || meta.status === "unreadable";
+      return !!meta && meta.status === "analyzed" && meta.textHash === hashes[i];
+    });
+  }
+
+  async function analyze(request: AnalyzeRequest, tabId?: number): Promise<AnalyzeReply> {
+    let domain: string;
+    try {
+      domain = domainOf(request.pageUrl);
+    } catch {
+      return { ok: false, error: "bad pageUrl" };
+    }
+    const settings = await loadSettings();
+    if (!isActiveFor(settings, domain)) return { ok: false, error: "paused" };
+
+    try {
+      const hashes = await Promise.all(request.policies.map((p) => (p.text ? sha256Hex(normalizeForHash(p.text)) : "")));
+      const cached = await getCachedReport(domain, now());
+      if (cached && cacheStillValid(cached, request, hashes)) {
+        if (tabId !== undefined) await patchTab(tabId, { status: "ready", domain, error: undefined });
+        await setBadge(tabId, cached, "ready");
+        return { ok: true, report: cached };
+      }
+
+      if (tabId !== undefined) await patchTab(tabId, { status: "checking", domain, error: undefined });
+      // De-dupe per domain (and policy set, so a manual scan never borrows a checkout's result).
+      const flightKey = domain + "|" + request.policies.map((x) => x.url).join(" ");
+      let p = inflight.get(flightKey);
+      if (!p) {
+        const withHashes = await Promise.all(
+          request.policies.map(async (pol) => ({ ...pol, previousHash: (await getPolicyHash(pol.url)) ?? undefined })),
+        );
+        const body = buildAnalyzeRequest({ ...request, policies: withHashes });
+        p = postAnalyze(settings.apiBase, body, { fetchImpl }).then(async (report) => {
+          await saveReport(report, now());
+          for (const m of report.policies) if (m.status === "analyzed" && m.textHash) await setPolicyHash(m.url, m.textHash);
+          return report;
+        });
+        inflight.set(flightKey, p);
+        p.finally(() => inflight.delete(flightKey)).catch(() => undefined);
+      }
+      const report = await p;
+      if (tabId !== undefined) await patchTab(tabId, { status: "ready", domain });
+      await setBadge(tabId, report, "ready");
+      return { ok: true, report };
+    } catch (e) {
+      const error = String((e as Error)?.message ?? e);
+      if (tabId !== undefined) await patchTab(tabId, { status: "error", domain, error });
+      await setBadge(tabId, undefined, "error");
+      await notifyTab(tabId, { type: MSG.STATUS, status: "error" });
+      return { ok: false, error };
+    }
+  }
+
+  async function localFindings(msg: Extract<Message, { type: "LOCAL_FINDINGS" }>, tabId?: number): Promise<OkReply> {
+    // Stored for the popup only. Never sent to the backend.
+    if (tabId !== undefined) await patchTab(tabId, { fees: msg.fees, darkPatterns: msg.darkPatterns });
+    return { ok: true };
+  }
+
+  async function fetchHtml(url: string): Promise<FetchHtmlReply> {
+    const r = await fetchCapped(url, { fetchImpl });
+    return { ok: r.ok, html: r.html, status: r.status, finalUrl: r.finalUrl };
+  }
+
+  async function getState(tabId: number): Promise<TabState> {
+    const tab = await getTab(tabId);
+    const report = tab.domain && tab.status !== "idle" ? await getCachedReport(tab.domain, now()) : undefined;
+    return { status: tab.status, report, fees: tab.fees, darkPatterns: tab.darkPatterns, pageType: tab.pageType, error: tab.error };
+  }
+
+  async function scanTab(tabId: number): Promise<OkReply> {
+    const msg: Message = { type: MSG.SCAN_CURRENT_PAGE };
+    try {
+      await chrome.tabs.sendMessage(tabId, msg);
+    } catch {
+      // Tab opened before the extension was installed or reloaded: inject the content script, retry.
+      try {
+        await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+        await chrome.tabs.sendMessage(tabId, msg);
+      } catch (e) {
+        return { ok: false, error: "Can't scan this page: " + String((e as Error)?.message ?? e) };
+      }
+    }
+    await patchTab(tabId, { status: "checking", error: undefined });
+    await setBadge(tabId, undefined, "checking");
+    return { ok: true };
+  }
+
+  async function handle(msg: Message, sender: chrome.runtime.MessageSender): Promise<unknown> {
+    const tabId = sender.tab?.id;
+    switch (msg?.type) {
+      case MSG.PING:
+        return { ok: true };
+      case MSG.PAGE_READY:
+        return pageReady(msg, tabId);
+      case MSG.ANALYZE:
+        return analyze(msg.request, tabId);
+      case MSG.LOCAL_FINDINGS:
+        return localFindings(msg, tabId);
+      case MSG.FETCH_HTML:
+        return fetchHtml(msg.url);
+      case MSG.GET_STATE:
+        return getState(msg.tabId);
+      case MSG.SCAN_TAB:
+        return scanTab(msg.tabId);
+      default:
+        return undefined;
+    }
+  }
+
+  return { handle, pageReady, analyze, localFindings, fetchHtml, getState, scanTab };
+}
