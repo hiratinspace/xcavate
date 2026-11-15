@@ -241,15 +241,3 @@ export function partialNote(r: Report): string {
 export function andList(items: string[]): string {
   return items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
 }
-
-/** The verdict line's right-hand figure. */
-export function countText(r: Report, shown: number): string {
-  if (r.verdict === "green") return "None found";
-  if (r.verdict === "unknown") return "Not read";
-  if (r.verdict === "partial") {
-    const total = r.policies.length;
-    const read = r.policies.filter((p) => p.status === "analyzed").length;
-    return total ? `${read} of ${total} read` : "";
-  }
-  return shown === 1 ? "1 thing" : shown + " things";
-}

@@ -141,10 +141,8 @@ describe("3. V-05 charge-date headline and reminder on the card", () => {
     expect(cal.href).toMatch(/^https:\/\/calendar\.google\.com\/calendar\/render\?action=TEMPLATE/);
     const ics = root.querySelector('.remind a[download]') as HTMLAnchorElement;
     expect(ics.getAttribute("href")).toMatch(/^data:text\/calendar;charset=utf-8,BEGIN%3AVCALENDAR/);
-    // Every shown flag carries its proof, but the trial sentence leads and is never repeated.
     const quotes = root.querySelectorAll("blockquote");
-    const texts = Array.from(quotes, (q) => q.querySelector("p")?.textContent);
-    expect(new Set(texts).size).toBe(texts.length);
+    expect(quotes).toHaveLength(1);
     expect(quotes[0].textContent).toContain("automatically convert to a paid monthly plan");
     expect((quotes[0].querySelector("a") as HTMLAnchorElement).getAttribute("href")).toContain("#:~:text=");
     // The trial flag is the quote, so it is not repeated; the other money flags follow; arbitration never.
