@@ -6,6 +6,7 @@ import {
   type Message,
   type PageReadyReply,
 } from "@xcavate/shared/core";
+import type { DarkPatternFinding } from "@xcavate/shared/core";
 import { send } from "../lib/messaging";
 import { buildAnalyzeRequest } from "../lib/request";
 import { CARD_HOST_ID, Card } from "./card";
@@ -58,14 +59,17 @@ export function startContent(win: Window = window): void {
     clearMarkers();
     const fees = detectFees(doc);
     const hits = findDarkPatterns(doc);
+    // Local findings go to the service worker only; they are never sent to the backend.
+    const publish = (darkPatterns: DarkPatternFinding[]) => {
+      card.setLocal({ fees, darkPatterns });
+      void send({ type: MSG.LOCAL_FINDINGS, fees, darkPatterns });
+    };
     if (hits.length) {
       markers = new DarkPatternMarkers(doc);
+      markers.onUpdate = publish; // the shopper unticked a box: drop it from the card and popup too
       markers.mark(hits);
     }
-    const darkPatterns = hits.map((h) => h.finding);
-    card.setLocal({ fees, darkPatterns });
-    // Local findings go to the service worker only; they are never sent to the backend.
-    void send({ type: MSG.LOCAL_FINDINGS, fees, darkPatterns });
+    publish(hits.map((h) => h.finding));
   };
 
   const run = async () => {
