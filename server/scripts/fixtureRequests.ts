@@ -7,7 +7,7 @@ import { htmlToText } from "../src/extract/html.js";
 /**
  * AnalyzeRequests built from the fixture stores, the way the extension would send them:
  * policy HTML from disk, cleaned with the server-side extractor, at the URLs from
- * docs/fixtures-contract.md. Used by the seed script, the eval and the integration tests.
+ * fixtures/README.md. Used by the seed script, the eval and the integration tests.
  */
 
 export interface FixtureCase {

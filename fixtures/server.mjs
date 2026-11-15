@@ -1,5 +1,5 @@
 // Xcavate fixture stores. Plain node:http, no dependencies.
-// Contract: docs/fixtures-contract.md
+// Contract: fixtures/README.md
 //
 //   http://<site>.localhost:4000/<page>   one store per host (Chrome resolves *.localhost)
 //   http://localhost:4000/<site>/<page>   path-prefix fallback for Node tools

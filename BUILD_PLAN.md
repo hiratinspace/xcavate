@@ -153,7 +153,7 @@ Items marked **NEEDS YOU** change the plan if the answer differs. Everything els
 | Storage | SQLite via Node's built-in `node:sqlite`, behind a `Store` interface | Zero setup, no native module to compile (`better-sqlite3` failed to build on Node 24). **Fallback:** in-memory `Map` + JSON file |
 | LLM | Behind `LlmClient` interface; `LLM_PROVIDER=anthropic` or `mock` | Swappable for sponsor APIs; `mock` runs with no key |
 | Tests | vitest | Fast, TS-native |
-| Fixtures | Static HTML served by a tiny `node:http` app, one `*.localhost` host per store | Deterministic demo and tests; separate hosts keep the per-domain cache from mixing stores up. See `docs/fixtures-contract.md` |
+| Fixtures | Static HTML served by a tiny `node:http` app, one `*.localhost` host per store | Deterministic demo and tests; separate hosts keep the per-domain cache from mixing stores up. See `fixtures/README.md` |
 
 ```
 xcavate/
@@ -912,7 +912,7 @@ Done when:
 **P0 · 30m · Lane D · Depends on: D-06, U-01, A-07**
 - [ ] **Ticket complete**
 
-Build: `docs/smoke-checklist.md` — a scripted manual pass over the four fixtures (verdict, flags, links, badge). Automate with Playwright only if time allows.
+Build: `extension/SMOKE_TEST.md` — a scripted manual pass over the four fixtures (verdict, flags, links, badge). Automate with Playwright only if time allows.
 Done when:
 - Checklist passes twice in a row from a cold start (fresh profile, fresh DB).
 - Every failure found is filed as a ticket or fixed.
@@ -939,7 +939,7 @@ Done when:
 **P1 · 45m · Lane D · Depends on: Q-04**
 - [ ] **Ticket complete**
 
-Build: try 3–5 real checkout or sign-up pages. Record in `docs/real-site-notes.md`: detected? policies found? readable? flags sensible?
+Build: try 3–5 real checkout or sign-up pages. Record in `docs/research/real-site-notes.md`: detected? policies found? readable? flags sensible?
 Done when:
 - At least 2 real sites work end to end, or the failure reasons are written down and the pitch says "works best on…".
 - Any real site shown in the demo has been checked by a human reading the quoted clauses.
@@ -948,7 +948,7 @@ Done when:
 **P0 · 60m · Lane D · Depends on: Q-04**
 - [ ] **Ticket complete**
 
-Build: `docs/demo-script.md` (section 11), a screen recording of the full demo, and an offline rehearsal (Wi-Fi off, `LLM_PROVIDER=mock`, seeded cache).
+Build: `docs/pitch/demo-script.md` (section 11), a screen recording of the full demo, and an offline rehearsal (Wi-Fi off, `LLM_PROVIDER=mock`, seeded cache).
 Done when:
 - The demo runs in under 3 minutes, twice, by two different teammates.
 - It also runs with Wi-Fi off.
@@ -958,7 +958,7 @@ Done when:
 **P0 · 60m · Lane D · Depends on: S-01**
 - [ ] **Ticket complete**
 
-Build: README (what, why, how to run), `docs/pitch.md` (problem, demo, how it works, security, numbers, next steps), submission page text, 3–4 slides at most.
+Build: README (what, why, how to run), `docs/pitch/pitch.md` (problem, demo, how it works, security, numbers, next steps), submission page text, 3–4 slides at most.
 Done when:
 - A stranger can run the project from the README in 10 minutes.
 - Submission is in at least 60 minutes before the deadline.
@@ -1052,7 +1052,7 @@ Plan sleep in shifts between hours 10 and 19. Tired people at hour 22 cause more
 
 ## 16. Direction v2 (proposed 2026-11-14, after the P0 build)
 
-Full reasoning: `docs/direction-v2.md` (merged from an outside critique, two code reviews and real-site research). **Wedge:** every warning is a verified sentence, and at a free-trial sign-up it becomes a date, a dollar amount and an action. Competitors (TermAlert, AgreeGuard, TermsDigest, Gemini in Chrome) already do "AI reads the terms and shows a traffic light"; we compete on proof and action, not on reading.
+Full reasoning: `docs/plan/direction-v2.md` (merged from an outside critique, two code reviews and real-site research). **Wedge:** every warning is a verified sentence, and at a free-trial sign-up it becomes a date, a dollar amount and an action. Competitors (TermAlert, AgreeGuard, TermsDigest, Gemini in Chrome) already do "AI reads the terms and shows a traffic light"; we compete on proof and action, not on reading.
 
 **Status: APPROVED 2026-11-14.** API key: owner adds it to server/.env. V-08 rights line: yes, as information. V-09 deploy: deferred until the tool runs end to end (owner asked for a reminder). Tickets below replace the remaining P1/P2 work. Priorities follow section 0.
 
@@ -1061,7 +1061,7 @@ Full reasoning: `docs/direction-v2.md` (merged from an outside critique, two cod
 | V-01 | Verdict recalibration: plain monthly auto-renewal with online cancel → low ("normal for subscriptions"); red only for harsh terms (phone/mail-only cancel, notice ≥ 30 d, termination fee, trial → annual or no reminder, no refund on prepaid annual). Arbitration and data_sharing never count toward the verdict and never appear in the card's top 3 | P0 | 45m | B | – |
 | V-02 | "Partly read" state: green requires a terms, refund or subscription policy analysed; otherwise grey "Partly read" naming unreadable policies (new `Verdict` value `partial`, contract change in 6.1) | P0 | 45m | B+C | – |
 | V-03 | Real model measured: human reviews `eval/real/labels.json`; eval runs rules-only and rules+Claude side by side with real `LLM_PROVIDER=anthropic`; mock mode reports `usedLlm:false` | P0 | 60m | D | API key |
-| V-04 | Real-browser smoke pass: a human runs `docs/smoke-checklist.md` in a fresh Chrome profile; automate with Playwright + Chromium `--load-extension` if time allows | P0 | 45m | D | fix rounds |
+| V-04 | Real-browser smoke pass: a human runs `extension/SMOKE_TEST.md` in a fresh Chrome profile; automate with Playwright + Chromium `--load-extension` if time allows | P0 | 45m | D | fix rounds |
 | V-05 | Charge-date headline on trial pages: "Free for 7 days, then $14.99/mo from <date>", Remind me button and one quoted line on the card | P0 | 60m | C | – |
 | V-06 | In-browser rules engine: run split/prefilter/rules/verify/score in the extension for an instant offline first verdict; backend LLM pass upgrades it | P1 | 90m | A | V-01 |
 | V-07 | Fire earlier: plans/pricing pages with "Start free trial / Try free" CTA + price qualify | P1 | 30m | A | – |

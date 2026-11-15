@@ -29,7 +29,7 @@ describe("golden verdicts (LLM_PROVIDER=mock)", () => {
   });
 });
 
-/** The planted sentences per store (docs/fixtures-contract.md). */
+/** The planted sentences per store (fixtures/README.md). */
 const PLANTED: Record<string, { page: string; phrases: string[] }[]> = {
   streamnest: [
     { page: "subscription", phrases: ["7-day free trial", "$14.99 per month", "renews automatically each month until you cancel"] },

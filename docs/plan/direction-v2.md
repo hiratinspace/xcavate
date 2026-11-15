@@ -1,6 +1,6 @@
 # Xcavate: weaknesses and direction v2
 
-Written 2026-11-14 after the full P0 build. Sources: an outside adversarial critique (`docs/critique-external.md`, with competitor research), two independent code reviews (backend, extension), the real-site research (`docs/real-site-notes.md`), and the lead's own build notes.
+Written 2026-11-14 after the full P0 build. Sources: an outside adversarial critique (`docs/research/critique-external.md`, with competitor research), two independent code reviews (backend, extension), the real-site research (`docs/research/real-site-notes.md`), and the lead's own build notes.
 
 ## The one-paragraph diagnosis
 

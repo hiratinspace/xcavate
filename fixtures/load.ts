@@ -1,4 +1,4 @@
-// Test helper for fixture HTML. Contract: docs/fixtures-contract.md
+// Test helper for fixture HTML. Contract: fixtures/README.md
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

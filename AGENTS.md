@@ -40,7 +40,9 @@ The verdict is always computed in code, never by the model. The model only propo
 | `server/src` | `app.ts` (Express factory), `routes/`, `pipeline/` (`split`, `prefilter`, `rules`, `verify`, `ground`, `score`, `diff`, `extract`, `rights`, `run`), `llm/` (`anthropic.ts`, `mock.ts`, `prompt.ts`, `schema.ts`), `store/` (sqlite, memory), `log.ts` (logs domain + timing only). |
 | `server/scripts` | `seed.ts` (trusted run that publishes demo reports), `fixtureRequests.ts`. |
 | `extension/src` | `content/` (classifier, policyFinder, extractor, collect, fees, darkPatterns, spa, card), `background/` (handlers, state, api, badge), `lib/` (netguard SSRF guard, fetchCapped, actions for calendar/.ics/mailto, money parsing), `popup/`. `build.mjs` bundles to `extension/dist`. |
-| `fixtures/` | Five fictional stores on `*.localhost:4000` plus a cross-origin legal host on `:4001`, `golden.json` (expected verdicts and forbidden categories), `load.ts` test helper. |
+| `fixtures/` | Five fictional stores on `*.localhost:4000` plus a cross-origin legal host on `:4001`, `golden.json` (expected verdicts and forbidden categories), `load.ts` test helper. Hosts, routes and planted clauses: `fixtures/README.md`. |
+| `extension/SMOKE_TEST.md` | Manual end-to-end checklist over the fixture stores (V-04). |
+| `docs/` | Planning and pitch material (temporary on GitHub): `plan/` (direction v2), `pitch/` (pitch, submission text, demo script), `research/` (real-site notes, outside critique). `BUILD_PLAN.md` at the root is the original spec referenced by section numbers in code comments. |
 | `eval/run.ts` | Accuracy script: per-category precision/recall, verdict accuracy, latency. Real-world texts live in `eval/real/` (git-ignored, copyrighted). |
 
 ### Fixture stores (deterministic demo and tests)
@@ -81,7 +83,7 @@ The project was built by one lead agent coordinating parallel sub-agents, each o
 | Backend | `server/`, `eval/` | API, pipeline, LLM client, store, seed, eval, injection tests. |
 | Extension | `extension/` | Detection, extraction, orchestration, card, popup, local checks. |
 | Writing | `README.md`, `docs/` | README, pitch, demo script. |
-| Research | `docs/real-site-notes.md`, `eval/real/` | Real-site fetchability, AI-drafted labelled policy set. |
+| Research | `docs/research/real-site-notes.md`, `eval/real/` | Real-site fetchability, AI-drafted labelled policy set. |
 | Reviewers (read-only) | none | Independent reviews of backend and extension, plus an outside product critique. They report findings; the owning lane fixes them. |
 
 The loop every change went through:

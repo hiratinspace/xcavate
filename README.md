@@ -138,18 +138,22 @@ To pre-fill the cache so every demo store answers instantly: `npm run seed`.
 ## Project layout
 
 ```
-packages/shared/   types, zod schemas, categories, verdict wording (used by both sides)
+AGENTS.md          how the project is built and how to contribute (start here)
+packages/shared/   contracts: zod schemas, types, categories, verdict wording (used by both sides)
 extension/         Manifest V3 extension (TypeScript, esbuild)
   src/content/     page classifier, policy finder, extractor, fees, add-ons, card
-  src/background/  service worker: storage, fetches, backend calls, badge
-  src/popup/       full report, trial reminder, cancellation helper
+  src/background/  service worker: storage, guarded fetches, backend calls, badge
+  src/lib/         network guard, capped fetch, calendar/.ics/mailto actions, money parsing
+  src/popup/       full report, trial reminder, cancellation helper, settings
+  SMOKE_TEST.md    manual end-to-end checklist over the demo stores
 server/            Express backend
-  src/pipeline/    split, prefilter, rules, verify, score, diff
+  src/routes/      /healthz, /v1/analyze, /v1/report, rate limit
+  src/pipeline/    split, prefilter, rules, verify, ground, score, diff, rights
   src/llm/         provider interface, Anthropic client, offline mock, prompt
   src/store/       SQLite and in-memory stores
-  scripts/seed.ts  pre-analyses the demo stores
-fixtures/          four fictional stores, a fixture server, and golden.json
-eval/              accuracy script over the labelled set
+  scripts/         seed (pre-analyses the demo stores)
+fixtures/          fictional demo stores, fixture server, golden.json (see fixtures/README.md)
+eval/              accuracy script over the fixtures and a local labelled set
 ```
 
 ## Scripts
