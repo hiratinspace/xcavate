@@ -67,7 +67,8 @@ describe("content orchestrator (D-06)", () => {
 
     const req = analyzeOf(sent)!.request;
     expect(Object.keys(req).sort()).toEqual(["linksFound", "pageType", "pageUrl", "policies"]);
-    expect(req.pageUrl).toBe("http://localhost:3000/checkout"); // query + hash stripped
+    expect(req.pageUrl).toBe("http://localhost:3000/"); // V-11: origin only
+    expect(analyzeOf(sent)!.page).toBe("http://localhost:3000/checkout"); // local-only, query + hash stripped
     expect(req.policies.map((p) => p.kind)).toEqual(["subscription", "terms", "privacy"]);
     expect(req.policies.every((p) => p.text.length >= 500)).toBe(true);
     expect(req.policies[0].text).toContain("renews automatically each month until you cancel");
@@ -143,7 +144,7 @@ describe("content orchestrator (D-06)", () => {
 describe("collectPolicies", () => {
   it("falls back to well-known paths when no links exist, and counts them as found", async () => {
     const doc = htmlDoc("<p>Checkout</p>", "https://shop.example/checkout");
-    const fetchHtml = vi.fn(async (u: string) => (u.endsWith("/refund-policy") ? `<p>${"Refunds within 30 days. ".repeat(40)}</p>` : undefined));
+    const fetchHtml = vi.fn(async (u: string) => (u === "https://shop.example/refund-policy" ? `<p>${"Refunds within 30 days. ".repeat(40)}</p>` : undefined));
     const req: AnalyzeRequest = await collectPolicies(doc, "https://shop.example/checkout", "checkout", { fetchHtml });
     expect(req.policies).toHaveLength(1);
     expect(req.policies[0]).toMatchObject({ url: "https://shop.example/refund-policy", kind: "refund" });

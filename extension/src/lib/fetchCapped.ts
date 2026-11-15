@@ -39,7 +39,17 @@ export async function fetchCapped(
       headers: { Accept: "text/html,application/xhtml+xml,text/plain;q=0.8" },
     });
     // Re-check where redirects led: a public URL must not bounce us into the local network.
-    // (Service workers cannot inspect each hop; the body of a blocked final hop is never read or returned.)
+    //
+    // Accepted residual risk (security review, round 3): we keep redirect: "follow".
+    // - In an MV3 service worker, redirect: "manual" gives an opaqueredirect response with no
+    //   readable Location, so each hop cannot be checked before it is requested.
+    // - Refusing all redirects would break many real policy links (http to https, /terms to
+    //   /legal/terms, locale redirects, Shopify /policies/ paths).
+    // - So a public URL that redirects to an internal one still causes one credential-less GET
+    //   (credentials: "omit") to that address. Its response is discarded here and never read.
+    // - DNS rebinding (a public name that later resolves to a private IP) cannot be stopped by
+    //   hostname checks alone. Any text that did leak would only reach the Xcavate backend,
+    //   which does not show client-submitted text to anyone else.
     if (res.url && !allow(res.url)) {
       await res.body?.cancel().catch(() => undefined);
       return { ok: false, status: res.status, error: "blocked redirect" };

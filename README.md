@@ -126,7 +126,7 @@ To pre-fill the cache so every demo store answers instantly: `npm run seed`.
 
 ## Privacy and security
 
-- **What leaves the browser:** public policy text, the policy URLs, and the page URL with its query string and hash removed. Nothing else. The server rejects requests with unknown fields, so cart or form data cannot slip through.
+- **What leaves the browser:** the site's domain and the text of the public policy pages it links to (policy URLs with query strings removed). "Scan this page" also sends the text and address of the page you scan, which is why it refuses to scan checkout pages. Nothing else: the server rejects requests with unknown fields, so cart or form data cannot slip through, and it never shares what one user sent with others.
 - **What stays local:** hidden fee detection and pre-checked add-on detection run in the page. Form contents, cart contents and card fields are never read or sent.
 - **API key:** lives only in `server/.env` on the backend. The extension holds no secrets.
 - **Quote verification:** every warning must quote text that actually appears in the policy. Anything the model cannot quote exactly is dropped and counted.

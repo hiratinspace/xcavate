@@ -108,24 +108,11 @@ The loop every change went through:
 
 ## 6. Status (2026-11-14)
 
-**Done and pushed:** scaffold and contracts; fixture stores; backend (API, pipeline, LLM client, store, seed, eval, prompt-injection tests); extension (all P0 plus fees, add-ons, trial reminder, cancellation helper, change alerts, settings); README; two independent review rounds with fixes; contract support for the `partial` verdict and per-flag `context` / `rightsNote`. Roughly 450 tests.
+**Done and pushed:** scaffold and contracts; fixture stores; backend (API, pipeline, LLM client, store, seed, eval, prompt-injection tests); extension (all P0 plus fees, add-ons, trial reminder, cancellation helper, change alerts, settings); README; two independent review rounds with fixes; contract support for the `partial` verdict and per-flag `context` / `rightsNote`. 
 
 **Measured so far (offline mock mode, rules only, no real model):** fixtures 5/5 verdicts. 10 real policies: 7/10 verdicts, precision 84%, recall 80%. Caveats: real-world labels were drafted by an AI agent and not yet human-reviewed, and the rules were tuned while looking at those texts, so these are not held-out numbers. **The real model has not been measured yet.**
 
-**In flight when this was written (may already be merged; check `git log`):**
-
-| ID | What | Lane |
-|---|---|---|
-| V-01 | Verdict recalibration: ordinary subscription renewal with online cancel is low, red only for harsh terms; arbitration and data sharing never drive the verdict | Backend |
-| V-02 | `partial` verdict: green only if a terms/refund/subscription policy was read | Backend + Extension |
-| V-03 | Mock reports `usedLlm:false`; `eval --compare` for rules-only vs rules + Claude | Backend |
-| V-05 | Trial card headline: "Free for 7 days, then $14.99/month from <date>" with Remind me and a quoted line on the card | Extension |
-| V-07 | Card fires on plan/pricing pages with a free-trial CTA and a recurring price | Extension |
-| V-08 | "Your rights" note on phone-only cancellation (California auto-renewal law), worded as information | Backend + Extension |
-| V-10 | Shopify fallback policy paths | Extension |
-| V-11 | Send only the domain to the backend | Extension |
-| - | Snapshot retention by age (stops anonymous eviction of old policy versions) | Backend |
-| - | netguard: block IP-embedding hostnames and wrapped IPv6 forms; document accepted redirect risk | Extension |
+**Direction v2 (merged):** recalibrated verdict (V-01: plain renewals with online cancel are low, red needs harsh terms; arbitration and data sharing never drive the verdict), grey "Partly read" state instead of false green (V-02), honest mock + `npm run eval -- --compare` (V-03 code), trial card headline with charge date, Remind me and a quoted line (V-05), card fires on pricing pages (V-07), California rights note on phone-only cancellation (V-08, wording pending owner review), Shopify fallback paths (V-10), domain-only `pageUrl` (V-11), snapshot retention that refuses new versions at the per-URL cap, hardened netguard. About 545 tests.
 
 **Open, good places to contribute:**
 

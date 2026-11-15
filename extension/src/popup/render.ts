@@ -16,6 +16,9 @@ import {
   buildCancellationMailto,
   buildTrialReminder,
   contactHref,
+  linkParts,
+  partialNote,
+  RIGHTS_LABEL,
   storeName,
   trialPolicyUrl,
 } from "../lib/actions";
@@ -43,6 +46,9 @@ export interface PopupActions {
   saveApiBase(v: string): void;
   downloadIcs(filename: string, ics: string): void;
 }
+
+export const PRIVACY_LINE =
+  "Sent for analysis: the site's address (domain only) and the text of the policy pages it links to. Scan this page also sends the text and address of the page you scan, so Xcavate refuses to scan checkout pages. Fees and ticked boxes stay on your computer.";
 
 const SEVERITY_WORD = { high: "High", medium: "Medium", low: "Low" } as const;
 const KIND_WORD = { subscription: "Subscription", refund: "Refunds", terms: "Terms", privacy: "Privacy", other: "This page" } as const;
@@ -139,7 +145,7 @@ export function renderPopup(root: HTMLElement, view: PopupView, actions: PopupAc
       "footer",
       {},
       DISCLAIMER +
-        " Sent for analysis: the text of the policy pages this site links to, and page addresses without their query. Scan this page sends the text of the page you scan, so Xcavate refuses to scan checkout pages. Fees and ticked boxes stay on your computer.",
+        " " + PRIVACY_LINE,
     ),
   );
 
@@ -218,6 +224,17 @@ function reportSections(report: Report, view: PopupView): { lead: HTMLElement[];
     );
   } else if (report.verdict === "green") {
     out.push(h("section", {}, h("p", {}, "No auto-renewals, refund limits, cancellation hoops or extra fees were found in the terms we read.")));
+  }
+  if (report.verdict === "partial") {
+    out.push(
+      h(
+        "section",
+        { class: "partial" },
+        h("h2", {}, "Only partly read"),
+        h("p", {}, partialNote(report)),
+        h("p", { class: "muted" }, "No money traps in what we could read. That isn't the same as none."),
+      ),
+    );
   } else if (report.verdict === "unknown") {
     out.push(
       h(
@@ -318,6 +335,7 @@ function flagItem(f: Flag): HTMLElement {
     {},
     h("h3", {}, f.title, h("small", { title: CATEGORY_LABEL[f.category] }, SEVERITY_WORD[f.severity])),
     h("p", { class: "sum" }, f.summary),
+    f.context ? h("p", { class: "ctx" }, f.context) : null,
     f.costImpact ? h("p", { class: "cost" }, "Cost: " + f.costImpact) : null,
     f.quote ? h("blockquote", {}, f.quote) : null,
     f.quote && f.policyUrl
@@ -328,8 +346,14 @@ function flagItem(f: Flag): HTMLElement {
           " (" + shortUrl(f.policyUrl) + ")",
         )
       : null,
+    f.rightsNote ? rightsBox(f.rightsNote) : null,
   );
   return h("li", { class: "flag", "data-sev": f.severity }, sev, body);
+}
+
+function rightsBox(note: string): HTMLElement {
+  const parts = linkParts(note).map((x) => (x.href ? h("a", { href: x.href, target: "_blank", rel: "noopener noreferrer" }, x.text) : x.text));
+  return h("div", { class: "rights" }, h("p", { class: "rights-label" }, RIGHTS_LABEL), h("p", { class: "rights-text" }, ...parts));
 }
 
 function localFees(fees: FeeSummary | undefined): HTMLElement | null {

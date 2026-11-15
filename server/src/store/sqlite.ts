@@ -92,6 +92,13 @@ export class SqliteStore implements Store {
     return row?.text;
   }
   putSnapshot(url: string, hash: string, text: string) {
+    const t0 = this.now();
+    this.db.prepare("DELETE FROM snapshots WHERE url = ? AND created_at < ?").run(url, t0 - SNAPSHOT_MAX_AGE_MS);
+    // At the per-URL cap, refuse NEW versions instead of evicting old ones: anonymous clients must not be
+    // able to push a genuine older version out by flooding fake ones. Known versions are still refreshed.
+    const known = this.db.prepare("SELECT 1 FROM snapshots WHERE url = ? AND hash = ?").get(url, hash);
+    const count = (this.db.prepare("SELECT COUNT(*) AS n FROM snapshots WHERE url = ?").get(url) as { n: number }).n;
+    if (!known && count >= SNAPSHOTS_PER_URL) return;
     const seq = (this.db.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM snapshots").get() as { n: number }).n;
     const t = this.now();
     this.db
@@ -100,13 +107,7 @@ export class SqliteStore implements Store {
           "ON CONFLICT (url, hash) DO UPDATE SET seq = excluded.seq, created_at = excluded.created_at",
       )
       .run(url, hash, text, t, seq);
-    // Versions of this URL not seen for 30 days go; then the per-URL safety cap and the global cap.
-    this.db.prepare("DELETE FROM snapshots WHERE url = ? AND created_at < ?").run(url, t - SNAPSHOT_MAX_AGE_MS);
-    this.db
-      .prepare(
-        "DELETE FROM snapshots WHERE url = ? AND hash NOT IN (SELECT hash FROM snapshots WHERE url = ? ORDER BY seq DESC LIMIT ?)",
-      )
-      .run(url, url, SNAPSHOTS_PER_URL);
+    // Global cap (oldest first).
     this.db
       .prepare("DELETE FROM snapshots WHERE rowid IN (SELECT rowid FROM snapshots ORDER BY seq DESC LIMIT -1 OFFSET ?)")
       .run(MAX_SNAPSHOTS);

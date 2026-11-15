@@ -91,7 +91,7 @@ export function startContent(win: Window = window): void {
     try {
       const request = await collectPolicies(doc, url, cls.pageType, { settle: () => waitForDomQuiet(doc), cache: policyCache });
       if (my !== gen) return;
-      const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request });
+      const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request, page: pageKey });
       if (my !== gen) return;
       if (res?.ok && res.report) {
         analyzedFor = pageKey;
@@ -120,7 +120,8 @@ export function startContent(win: Window = window): void {
       linksFound: 1,
       policies: [{ url: stripPageUrl(url), kind: "other", text: ex.text }],
     });
-    const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request });
+    // A manual scan sends the scanned page's own (query-less) address: its text is the policy.
+    const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request, page: stripPageUrl(url) });
     if (my !== gen) return;
     if (res?.ok && res.report) card.showReport(res.report);
     else card.hide();

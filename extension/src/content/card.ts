@@ -1,5 +1,6 @@
 import {
   DISCLAIMER,
+  textFragmentUrl,
   VERDICT_ICON,
   VERDICT_WORD,
   verdictHeadline,
@@ -10,10 +11,12 @@ import {
 } from "@xcavate/shared/core";
 import cardCss from "./card.css?inline";
 import { describeExtras, extraFeeCount } from "./fees";
+import { buildTrialReminder, cardFlags, chargeHeadline, linkParts, partialNote, RIGHTS_LABEL, storeName, trialPolicyUrl } from "../lib/actions";
 
 /**
  * U-01 checkout card (BUILD_PLAN 7.10). Fixed bottom-right, 340 px, inside a closed shadow root.
- * States: checking, red, yellow, green, unknown. Errors show no card at all.
+ * States: checking, red, yellow, green, partial, unknown. Errors show no card at all.
+ * With a known trial length the headline is the charge date (V-05) and the card offers a reminder.
  */
 
 export const CARD_HOST_ID = "xcavate-card-host";
@@ -132,10 +135,12 @@ export class Card {
     top.appendChild(close);
     head.appendChild(top);
 
-    const headline =
-      this.state === "checking"
-        ? "Reading this site's terms before you pay…"
-        : verdictHeadline(this.report!);
+    const r = this.state === "report" ? this.report : undefined;
+    const shown = r ? cardFlags(r.flags, MAX_FLAGS) : [];
+    const charge = r ? chargeHeadline(r.trial) : undefined;
+    const headline = !r
+      ? "Reading this site's terms before you pay…"
+      : charge ?? verdictHeadline({ verdict: r.verdict, flags: shown.length ? shown : r.flags });
     const h = el(d, "p", "headline", headline);
     h.setAttribute("role", "status");
     h.setAttribute("aria-live", "polite");
@@ -143,19 +148,23 @@ export class Card {
     if (this.domain) head.appendChild(el(d, "p", "site", this.domain));
     body.appendChild(head);
 
-    if (this.state === "report" && this.report) {
-      const flags = this.report.flags.slice(0, MAX_FLAGS);
-      if (flags.length) {
-        const list = el(d, "ul", "flags");
-        list.setAttribute("aria-label", "Things to read");
-        for (const f of flags) list.appendChild(this.flagItem(f));
-        body.appendChild(list);
-      } else if (this.report.verdict === "green") {
-        body.appendChild(el(d, "p", "empty", "We read " + policyCount(this.report) + " and found no auto-renewals, refund limits or extra fees."));
+    if (r) {
+      let rest = shown;
+      if (charge) {
+        const quoted = this.trialBlock(body, r, shown);
+        rest = shown.filter((f) => f !== quoted);
       }
-      const cov = coverage(this.report);
+      if (rest.length) {
+        const list = el(d, "ul", "flags");
+        list.setAttribute("aria-label", charge ? "More to read" : "Things to read");
+        for (const f of rest) list.appendChild(this.flagItem(f));
+        body.appendChild(list);
+      } else if (r.verdict === "green" && !charge) {
+        body.appendChild(el(d, "p", "empty", "We read " + policyCount(r) + " and found no auto-renewals, refund limits or extra fees."));
+      }
+      const cov = r.verdict === "partial" ? partialNote(r) : coverage(r);
       if (cov) body.appendChild(el(d, "p", "note coverage", cov));
-      const changes = this.report.changes?.filter((c) => c.bullets.length) ?? [];
+      const changes = r.changes?.filter((c) => c.bullets.length) ?? [];
       if (changes.length) {
         const p = el(d, "p", "note change");
         p.appendChild(el(d, "b", "", "Terms changed since your last visit. "));
@@ -223,9 +232,78 @@ export class Card {
     title.appendChild(el(d, "small", "", SEVERITY_WORD[f.severity]));
     text.appendChild(title);
     text.appendChild(el(d, "p", "flag-sum", f.summary));
+    if (f.context) text.appendChild(el(d, "p", "flag-ctx", f.context));
+    if (f.rightsNote) text.appendChild(rightsBox(d, f.rightsNote));
     li.appendChild(text);
     return li;
   }
+
+  /**
+   * V-05: reminder actions and one quoted sentence under the charge-date headline.
+   * Returns the card flag whose quote is shown, so it is not repeated below.
+   */
+  private trialBlock(body: HTMLElement, r: Report, shown: Flag[]): Flag | undefined {
+    const d = this.doc;
+    const wrap = el(d, "div", "trial");
+    const policyUrl = trialPolicyUrl(r);
+    const reminder = buildTrialReminder(r.trial, storeName(r.domain, d.title), policyUrl);
+    if (reminder) {
+      const acts = el(d, "div", "remind");
+      acts.setAttribute("role", "group");
+      acts.setAttribute("aria-label", "Trial reminder");
+      const days = reminder.daysBefore === 1 ? "1 day" : reminder.daysBefore + " days";
+      const cal = el(d, "a", "btn primary", `Remind me ${days} before`) as HTMLAnchorElement;
+      cal.href = reminder.calendarUrl;
+      cal.target = "_blank";
+      cal.rel = "noopener noreferrer";
+      cal.setAttribute("aria-label", `Remind me ${days} before the first charge, in Google Calendar (opens a new tab)`);
+      acts.appendChild(cal);
+      const ics = el(d, "a", "btn", ".ics file") as HTMLAnchorElement;
+      ics.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(reminder.ics);
+      ics.download = "xcavate-trial-reminder.ics";
+      ics.setAttribute("aria-label", "Download the reminder as an .ics file for any calendar app");
+      acts.appendChild(ics);
+      wrap.appendChild(acts);
+    }
+
+    const trialFlag = shown.find((f) => f.category === "trial_converts");
+    const quote = r.trial?.quote || trialFlag?.quote || shown[0]?.quote;
+    const from = r.trial?.quote ? trialFlag : trialFlag ?? shown[0];
+    const url = from?.policyUrl || policyUrl;
+    if (quote) {
+      const bq = el(d, "blockquote", "quote");
+      bq.appendChild(el(d, "p", "", "\u201C" + quote + "\u201D"));
+      const link = url ? textFragmentUrl(url, quote) : "";
+      if (link) {
+        const a = el(d, "a", "see", "See in policy") as HTMLAnchorElement;
+        a.href = link;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        bq.appendChild(a);
+      }
+      wrap.appendChild(bq);
+    }
+    body.appendChild(wrap);
+    return quote ? from : undefined;
+  }
+}
+
+/** "Your rights (general information, not legal advice)" box. Only real http(s) URLs become links. */
+export function rightsBox(d: Document, note: string): HTMLElement {
+  const box = el(d, "div", "rights");
+  box.appendChild(el(d, "p", "rights-label", RIGHTS_LABEL));
+  const p = el(d, "p", "rights-text");
+  for (const part of linkParts(note)) {
+    if (part.href) {
+      const a = el(d, "a", "", part.text) as HTMLAnchorElement;
+      a.href = part.href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      p.appendChild(a);
+    } else p.appendChild(d.createTextNode(part.text));
+  }
+  box.appendChild(p);
+  return box;
 }
 
 function el(d: Document, tag: string, cls: string, text?: string): HTMLElement {

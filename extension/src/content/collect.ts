@@ -116,7 +116,8 @@ export async function collectPolicies(
   const seen = new Set<string>();
   const policies = fetched.filter((p) => (seen.has(p.url) ? false : (seen.add(p.url), true)));
   return buildAnalyzeRequest({
-    pageUrl,
+    // V-11: the backend only needs the site, not which page of it you are on.
+    pageUrl: new URL(pageUrl).origin + "/",
     pageType,
     linksFound: Math.max(candidates.length, links.length),
     policies,

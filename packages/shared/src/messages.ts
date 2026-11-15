@@ -19,7 +19,11 @@ export type Message =
   | { type: "PING" }
   | { type: "PAGE_READY"; pageType: PageType; score: number; url: string }
   | { type: "FETCH_HTML"; url: string }
-  | ({ type: "ANALYZE" } & { request: AnalyzeRequest })
+  /**
+   * `page` is the query-less address of the page the request was made for. It stays inside the
+   * extension (late-reply check); only `request` is sent to the backend, whose pageUrl is origin + "/" (V-11).
+   */
+  | ({ type: "ANALYZE" } & { request: AnalyzeRequest; page?: string })
   | { type: "LOCAL_FINDINGS"; fees?: FeeSummary; darkPatterns?: DarkPatternFinding[] }
   | { type: "REPORT"; report: Report }
   | { type: "SCAN_CURRENT_PAGE" }

@@ -33,6 +33,10 @@ const MAX_TOTAL = 4;
 const MAX_PER_KIND = 2;
 
 export const WELL_KNOWN_PATHS: { path: string; kind: PolicyLink["kind"] }[] = [
+  // V-10: Shopify stores serve their policies here, whatever the theme links to.
+  { path: "/policies/refund-policy", kind: "refund" },
+  { path: "/policies/terms-of-service", kind: "terms" },
+  { path: "/policies/subscription-policy", kind: "subscription" },
   { path: "/terms", kind: "terms" },
   { path: "/terms-of-service", kind: "terms" },
   { path: "/refund-policy", kind: "refund" },

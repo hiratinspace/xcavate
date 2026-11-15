@@ -264,12 +264,16 @@ describe("item 7: bounded growth", () => {
     s.close();
   });
 
-  it.each(["sqlite", "memory"] as const)("%s applies a per-URL safety cap of SNAPSHOTS_PER_URL", (mode) => {
+  it.each(["sqlite", "memory"] as const)("%s refuses new versions past SNAPSHOTS_PER_URL instead of evicting old ones", (mode) => {
     const s = openStore(":memory:", mode);
     for (let i = 0; i <= SNAPSHOTS_PER_URL; i++) s.putSnapshot("https://x.test/t", "h" + i, "t" + i);
-    expect(s.getSnapshot("https://x.test/t", "h0")).toBeUndefined();
+    // At the cap, new versions are refused so a flood can't evict the genuine older version.
+    expect(s.getSnapshot("https://x.test/t", "h0")).toBe("t0");
     expect(s.getSnapshot("https://x.test/t", "h1")).toBe("t1");
-    expect(s.getSnapshot("https://x.test/t", "h" + SNAPSHOTS_PER_URL)).toBe("t" + SNAPSHOTS_PER_URL);
+    expect(s.getSnapshot("https://x.test/t", "h" + SNAPSHOTS_PER_URL)).toBeUndefined();
+    // A known version is still accepted (refreshed) at the cap.
+    s.putSnapshot("https://x.test/t", "h0", "t0");
+    expect(s.getSnapshot("https://x.test/t", "h0")).toBe("t0");
     expect(SNAPSHOTS_PER_URL).toBe(20);
     s.close();
   });

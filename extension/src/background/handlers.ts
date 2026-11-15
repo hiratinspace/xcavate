@@ -117,7 +117,7 @@ export function createHandlers(deps: Deps = {}) {
     });
   }
 
-  async function analyze(request: AnalyzeRequest, tabId?: number): Promise<AnalyzeReply> {
+  async function analyze(request: AnalyzeRequest, tabId?: number, page?: string): Promise<AnalyzeReply> {
     let domain: string;
     try {
       domain = domainOf(request.pageUrl);
@@ -126,7 +126,15 @@ export function createHandlers(deps: Deps = {}) {
     }
     const settings = await loadSettings();
     if (!isActiveFor(settings, domain)) return { ok: false, error: "paused" };
-    const pageUrl = stripPageUrl(request.pageUrl);
+    // The page the request was made for (local only); request.pageUrl is just origin + "/" (V-11).
+    let pageUrl = stripPageUrl(request.pageUrl);
+    if (page) {
+      try {
+        if (domainOf(page) === domain) pageUrl = stripPageUrl(page);
+      } catch {
+        /* keep request.pageUrl */
+      }
+    }
 
     try {
       const hashes = await Promise.all(request.policies.map((p) => (p.text ? sha256Hex(normalizeForHash(p.text)) : "")));
@@ -214,7 +222,7 @@ export function createHandlers(deps: Deps = {}) {
       case MSG.PAGE_READY:
         return pageReady(msg, tabId);
       case MSG.ANALYZE:
-        return analyze(msg.request, tabId);
+        return analyze(msg.request, tabId, msg.page);
       case MSG.LOCAL_FINDINGS:
         return localFindings(msg, tabId);
       case MSG.FETCH_HTML:

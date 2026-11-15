@@ -19,7 +19,7 @@ describe("Card", () => {
 
   it("renders a red report: icon + word + headline, at most 3 flags with severity words", () => {
     const card = new Card(document, { shadowMode: "open" });
-    card.showReport(SAMPLE_REPORT_RED);
+    card.showReport({ ...SAMPLE_REPORT_RED, trial: undefined });
     const root = card.shadow;
     expect(root.querySelector(".card")?.getAttribute("data-verdict")).toBe("red");
     expect(root.querySelector(".glyph")?.textContent).toBe("!");
@@ -105,7 +105,7 @@ describe("Card", () => {
 
   it("renders untrusted report text as text, never as HTML", () => {
     const card = new Card(document, { shadowMode: "open" });
-    const evil = { ...SAMPLE_REPORT_RED, flags: [{ ...SAMPLE_REPORT_RED.flags[0], title: "<img src=x onerror=alert(1)>" }] };
+    const evil = { ...SAMPLE_REPORT_RED, trial: undefined, flags: [{ ...SAMPLE_REPORT_RED.flags[0], title: "<img src=x onerror=alert(1)>" }] };
     card.showReport(evil);
     expect(card.shadow.querySelector("img")).toBeNull();
     expect(text(card)).toContain("<img src=x onerror=alert(1)>");
