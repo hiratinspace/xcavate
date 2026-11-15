@@ -238,7 +238,7 @@ else
       "Real-world policies",
       rl,
       rlm,
-      "Saved texts of real policies in `eval/real/` (local only), labelled by hand. Each item is one policy analysed on its own (pageType \"none\")." +
+      "Saved texts of real policies in `eval/real/` (local only), labels drafted by an AI research agent and not yet reviewed by a human, so treat these numbers as provisional. The rules were also tuned while looking at these texts, so this is not a held-out test. Each item is one policy analysed on its own (pageType \"none\")." +
         (real.skipped.length ? ` Skipped: ${real.skipped.join(", ")}.` : ""),
     );
 
