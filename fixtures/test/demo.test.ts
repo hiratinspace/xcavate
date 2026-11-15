@@ -64,12 +64,15 @@ describe('judge demo', () => {
     doc.querySelector<HTMLButtonElement>('[data-present]')!.click();
     await new Promise((r) => setTimeout(r, 0));
     expect(doc.getElementById('stage-prev')!.hasAttribute('disabled')).toBe(true);
-    expect(doc.getElementById('evidence-figure')!.textContent).toBe('$1.5 billion');
+    expect(doc.getElementById('evidence-figure')!.textContent).toBe('97%');
     expect(doc.getElementById('stage-evidence')!.hidden).toBe(false);
-    expect(doc.querySelector<HTMLAnchorElement>('#evidence-source')!.href).toContain('ftc.gov/news-events/');
+    expect(doc.getElementById('stage-line')!.textContent).toContain('site-reputation checks');
+    expect(doc.getElementById('stage-line')!.textContent).toContain('suspected phishing');
+    expect(doc.querySelector<HTMLAnchorElement>('#evidence-source')!.href).toContain('priv.gc.ca/en/opc-news/');
     doc.getElementById('stage-next')!.click();
     expect(doc.querySelector<HTMLAnchorElement>('#stage-launch')!.href).toContain('streamnest.localhost:4000/checkout');
     expect(doc.getElementById('stage-evidence')!.hidden).toBe(true);
+
     doc.getElementById('timer-toggle')!.click();
     doc.getElementById('exit-stage')!.click();
     expect(doc.getElementById('timer-toggle')!.textContent).toBe('Start timer');
