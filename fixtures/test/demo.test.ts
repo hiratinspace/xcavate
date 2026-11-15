@@ -64,6 +64,8 @@ describe('judge demo', () => {
     doc.querySelector<HTMLButtonElement>('[data-present]')!.click();
     await new Promise((r) => setTimeout(r, 0));
     expect(doc.getElementById('stage-prev')!.hasAttribute('disabled')).toBe(true);
+    expect(doc.getElementById('stage-launch')!.hidden).toBe(true);
+    expect(doc.getElementById('stage-launch')!.hasAttribute('href')).toBe(false);
     expect(doc.getElementById('evidence-figure')!.textContent).toBe('97%');
     expect(doc.getElementById('stage-evidence')!.hidden).toBe(false);
     expect(doc.getElementById('stage-line')!.textContent).toContain('site-reputation checks');
@@ -72,6 +74,18 @@ describe('judge demo', () => {
     doc.getElementById('stage-next')!.click();
     expect(doc.querySelector<HTMLAnchorElement>('#stage-launch')!.href).toContain('streamnest.localhost:4000/checkout');
     expect(doc.getElementById('stage-evidence')!.hidden).toBe(true);
+    const launch = doc.querySelector<HTMLAnchorElement>('#stage-launch')!;
+    const destinations = [launch.href];
+    for (const site of ['privacyonly', 'gadgetly', 'fairbox', 'sneakyterms']) {
+      doc.getElementById('stage-next')!.click();
+      expect(launch.hidden).toBe(false);
+      expect(launch.href).toBe(`http://${site}.localhost:4000/checkout`);
+      destinations.push(launch.href);
+    }
+    expect(new Set(destinations).size).toBe(5);
+    doc.getElementById('stage-next')!.click();
+    expect(launch.hidden).toBe(true);
+    expect(launch.hasAttribute('href')).toBe(false);
 
     doc.getElementById('timer-toggle')!.click();
     doc.getElementById('exit-stage')!.click();
