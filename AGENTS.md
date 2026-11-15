@@ -112,7 +112,7 @@ The loop every change went through:
 
 **Measured so far (offline mock mode, rules only, no real model):** fixtures 5/5 verdicts. 10 real policies: 7/10 verdicts, precision 84%, recall 80%. Caveats: real-world labels were drafted by an AI agent and not yet human-reviewed, and the rules were tuned while looking at those texts, so these are not held-out numbers. **The real model has not been measured yet.**
 
-**Direction v2 (merged):** recalibrated verdict (V-01: plain renewals with online cancel are low, red needs harsh terms; arbitration and data sharing never drive the verdict), grey "Partly read" state instead of false green (V-02), honest mock + `npm run eval -- --compare` (V-03 code), trial card headline with charge date, Remind me and a quoted line (V-05), card fires on pricing pages (V-07), California rights note on phone-only cancellation (V-08, wording pending owner review), Shopify fallback paths (V-10), domain-only `pageUrl` (V-11), snapshot retention that refuses new versions at the per-URL cap, hardened netguard. About 545 tests.
+**Direction v2 (merged):** recalibrated verdict (V-01: plain renewals with online cancel are low, red needs harsh terms; arbitration and data sharing never drive the verdict), grey "Partly read" state instead of false green (V-02), honest mock + `npm run eval -- --compare` (V-03 code), trial card headline with charge date, Remind me and a quoted line (V-05), card fires on pricing pages (V-07), California rights note on phone-only cancellation (V-08, wording pending owner review), Shopify fallback paths (V-10), domain-only `pageUrl` (V-11), snapshot retention that refuses new versions at the per-URL cap, hardened netguard, on-device rules verdict that the backend report upgrades plus an "AI check" setting that sends nothing when off (V-06, parity-tested against the server). Professional README with screenshots in `.github/assets/`. About 577 tests.
 
 **Open, good places to contribute:**
 
@@ -121,7 +121,6 @@ The loop every change went through:
 | V-03 | Run the real model, report rules-only vs rules + Claude side by side, median latency | Needs an API key in `server/.env` |
 | V-04 | Real-browser smoke pass in a fresh Chrome profile over the four fixture stores; automate with Playwright + Chromium `--load-extension` | No agent has loaded the extension in a real browser yet: highest-value check |
 | - | Human review of the real-world labels (`eval/real/labels.json`, local only; ask the owner for the files) | Needed before any accuracy number is quoted |
-| V-06 | Run the rules engine in the extension for an instant, private first verdict (pipeline modules have no Node-only imports) | Upgrade when the backend LLM pass arrives |
 | V-09 | Deploy the backend and ship a packed `.zip` | Deferred by the owner until the tool works end to end |
 | V-12 | Pitch rewrite around proof + action; honest comparison with TermAlert, AgreeGuard and Gemini | After V-03 numbers exist |
 
