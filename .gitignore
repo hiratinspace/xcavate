@@ -26,3 +26,4 @@ coverage/
 .impeccable/
 # saved third-party policy texts (copyrighted, local eval only)
 eval/real/
+eval/results.md

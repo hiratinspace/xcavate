@@ -1,0 +1,466 @@
+import { CATEGORY_ORDER, LIMITS, SEVERITY_RANK } from "@xcavate/shared";
+import type { Category, Severity } from "@xcavate/shared";
+import type { Paragraph } from "./split.js";
+import {
+  NUM,
+  clip,
+  clipWords,
+  findMoney,
+  findPercent,
+  findPeriod,
+  lpNormalize,
+  splitSentences,
+  toNumber,
+  windowAround,
+} from "./textutil.js";
+
+/**
+ * Rules engine (A-03): regex patterns per category over sentences. Cheap,
+ * deterministic, works offline, and cannot be talked out of a finding by text in
+ * the policy. Each hit is a candidate flag quoting the matched sentence.
+ */
+
+export type RuleCategory = Exclude<Category, "missing_policy">;
+
+export interface RuleHit {
+  category: RuleCategory;
+  severity: Severity;
+  title: string;
+  summary: string;
+  costImpact?: string;
+  /** Exact text from the paragraph (whitespace collapsed), at most 300 chars. */
+  quote: string;
+  paragraphIndex: number;
+  /** Short tag of the pattern that fired (for tests and debugging). */
+  rule: string;
+}
+
+interface Ctx {
+  /** Original sentence. */
+  s: string;
+  /** Lower-cased, length-preserving normalised sentence. */
+  t: string;
+  /** The regex match in `t`. */
+  m: RegExpExecArray;
+}
+
+interface Pattern {
+  category: RuleCategory;
+  rule: string;
+  re: RegExp;
+  /** Default true: a negator just before the match (same clause) cancels it. */
+  negatable?: boolean;
+  /** Extra condition on the whole sentence. */
+  when?: (c: Ctx) => boolean;
+  severity: (c: Ctx) => Severity;
+  text: (c: Ctx) => { title: string; summary: string; costImpact?: string };
+}
+
+// ---------- negation ----------
+
+const NEGATOR = /\b(not|no|never|without|neither|nor|none|nothing|zero|free of|waive[sd]?)\b|n't\b/;
+const CONDITIONAL = /\b(if|unless|when|until|should)\b/;
+const SUFFIX_NEGATION =
+  /^[^,;:.]{0,25}?\b(does not|do not|doesn't|don't|will not|won't|shall not|is not|isn't|are not|aren't|never)\b\s+(apply|applies|be charged|be applied|be deducted|charged|required)|^\s*(is|are|will be|has been|have been)\s+waived\b|^\s*:?\s*(none|n\/a)\b/;
+
+const HARD_BOUNDARY = /[;:()]|\b(but|however|although|whereas|except)\b/g;
+const SOFT_BOUNDARY = /,|\b(and|or)\b/g;
+
+function boundaryEnds(s: string, re: RegExp): number[] {
+  const out: number[] = [];
+  re.lastIndex = 0;
+  for (let m = re.exec(s); m; m = re.exec(s)) out.push(m.index + m[0].length);
+  return out;
+}
+
+const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+
+/**
+ * The clause that ends just before a match. Hard boundaries (";", "but") always cut.
+ * Soft ones ("," "and" "or") cut only when what follows them has 4+ words, so a list
+ * like "we do not add service, processing or convenience fees" stays one clause.
+ */
+export function clauseBefore(before: string): string {
+  const hard = boundaryEnds(before, HARD_BOUNDARY);
+  const seg = hard.length ? before.slice(hard[hard.length - 1]) : before;
+  const cuts = boundaryEnds(seg, SOFT_BOUNDARY);
+  for (let i = cuts.length - 1; i >= 0; i--) {
+    const tail = seg.slice(cuts[i]);
+    if (wordCount(tail) >= 4) return tail;
+  }
+  return seg;
+}
+
+/** True when the match is cancelled by a negation in its own clause ("we do not charge a restocking fee"). */
+export function isNegated(t: string, start: number, end: number): boolean {
+  const before = t.slice(0, start);
+  const clause = clauseBefore(before);
+  const words = clause.trim().split(/\s+/).slice(-8).join(" ");
+  const neg = NEGATOR.exec(words);
+  if (neg) {
+    // "If you do not cancel ..." is a condition, not a denial: look for if/unless anywhere
+    // earlier in the clause, not just in the 8-word window.
+    const trimmed = clause.trim();
+    const negAt = trimmed.length - words.length + neg.index;
+    const cond = CONDITIONAL.exec(trimmed);
+    if (!(cond && cond.index < negAt)) return true;
+  }
+  return SUFFIX_NEGATION.test(t.slice(end, end + 60));
+}
+
+// ---------- helpers for templates ----------
+
+function money(c: Ctx): string | undefined {
+  return findMoney(c.s)[0];
+}
+
+function periodWord(c: Ctx): string {
+  const p = findPeriod(c.s);
+  return p ? " every " + p : "";
+}
+
+function priceWithPeriod(c: Ctx): string | undefined {
+  const m = money(c);
+  if (!m) return undefined;
+  const p = findPeriod(c.s);
+  return p ? m + " per " + p : m;
+}
+
+const YEARLY = /\b(annual(ly)?|yearly|each year|every year|per year|12-month|twelve-month|one-year|1-year)\b/;
+const NO_REMINDER = /without (prior |advance |any )?(notice|reminder|notifying|notification)|no (reminder|notice) (will be|is) (sent|given)/;
+const AUTO_CHARGE = /\b(automatic(ally)?|will be (charged|billed)|we will charge|unless you cancel|charged (to|on) (your|the) (card|payment method))\b/;
+
+function noticeDays(t: string): number | undefined {
+  const a = new RegExp(NUM + "[- ](calendar |business )?days?'?s?'? (prior |advance |written )?notice").exec(t);
+  if (a) return toNumber(a[1]);
+  const b = new RegExp("notice (period )?of (at least |not less than )?" + NUM + " (calendar |business )?days").exec(t);
+  if (b) return toNumber(b[3]);
+  const c = new RegExp("(at least|no later than|no less than|minimum of) " + NUM + " (calendar |business )?days (before|prior|in advance)").exec(t);
+  if (c) return toNumber(c[2]);
+  return undefined;
+}
+
+const PHONE_OR_MAIL =
+  /\b(by (tele)?phone|by calling|call (us|our|customer|the)|telephone|phone (call|line|number)|by (postal |certified |registered )?mail|in writing|written (notice|request|letter)|by post\b|certified letter)/;
+const CANCEL = /\bcancel(l?ation|l?ations|l?ed|l?ing|s)?\b|\bterminat(e|ion)\b/;
+const SUBSCRIPTION_CONTEXT = /\b(subscription|membership|plan|account|service|contract|agreement)\b/;
+
+/** Fees and refunds inside a dispute-resolution clause are about arbitration costs, not the purchase. */
+const ARBITRATION_CONTEXT = /\b(arbitrat\w*|filing fees?|adr services|jams|aaa|nam\b|mediator|tribunal)/;
+
+// ---------- patterns ----------
+
+const PATTERNS: Pattern[] = [
+  // auto_renewal
+  {
+    category: "auto_renewal",
+    rule: "renews",
+    re: /\b(auto-?renew(s|al|als|ed|ing)?|automatic(ally)? renew(s|al|als|ed|ing)?|renews? automatically|will (automatically )?renew|(automatically )?(renew|continue)s? (each|every) (month|year|week|billing)|continues? until (you cancel|cancell?ed|canceled)|until you cancel|until (it is |they are )?(cancell?ed|canceled)|recurring (charges?|payments?|billing|subscription|fees?)|(charge|bill) (you|your [a-z ]{0,24}?) (automatically )?(each|every|at the start of each) (month|year|week|billing))/,
+    severity: (c) => (YEARLY.test(c.t) || NO_REMINDER.test(c.t) ? "high" : "medium"),
+    text: (c) => {
+      const yearly = YEARLY.test(c.t);
+      const per = yearly ? " every year" : periodWord(c);
+      return {
+        title: "Renews automatically" + per,
+        summary: "Your plan keeps charging you" + per + " until you cancel it.",
+        costImpact: priceWithPeriod(c),
+      };
+    },
+  },
+  // trial_converts
+  {
+    category: "trial_converts",
+    rule: "trial-then-charge",
+    re: /\b(free trial|trial period|trial|introductory (period|offer|price)|promotional period)\b[^.]{0,160}?\b(automatic(ally)?|will be (charged|billed)|we will charge|you will pay|converts?|convert(ed)? (in)?to|becomes? a paid|be charged|be billed|start(s)? (charging|billing))\b/,
+    negatable: false,
+    when: (c) => !/\b(no|not|never) (be )?(charged|billed)\b[^.]{0,40}(trial|free)|won't be charged (during|for) the trial\b[^.]*$/.test(c.t) || AUTO_CHARGE.test(c.t),
+    severity: (c) => (AUTO_CHARGE.test(c.t) || /\bconvert/.test(c.t) ? "high" : "medium"),
+    text: (c) => {
+      const days = new RegExp(NUM + "[- ]day").exec(c.t);
+      const d = days ? toNumber(days[1]) : undefined;
+      const price = priceWithPeriod(c);
+      return {
+        title: "Free trial turns into a paid plan",
+        summary:
+          (d ? "After " + d + " days you" : "When the trial ends you") +
+          " are charged" +
+          (price ? " " + price : "") +
+          " automatically unless you cancel first.",
+        costImpact: price ? price + " after the trial" : undefined,
+      };
+    },
+  },
+  {
+    category: "trial_converts",
+    rule: "charge-after-trial",
+    re: /\b(charged|billed|charge (you|your (card|payment method|account))|bill (you|your (card|payment method|account))|converts?|payment method will be)\b[^.]{0,120}?\b(end of (the |your )?(free )?trial|trial (period )?(ends|expires|is over)|after (the |your )?(free )?trial)/,
+    severity: (c) => (AUTO_CHARGE.test(c.t) || /\b(charged|billed|charge|bill|converts?)\b/.test(c.t) ? "high" : "medium"),
+    text: (c) => {
+      const price = priceWithPeriod(c);
+      return {
+        title: "Free trial turns into a paid plan",
+        summary: "When the trial ends you are charged" + (price ? " " + price : "") + " automatically unless you cancel first.",
+        costImpact: price ? price + " after the trial" : undefined,
+      };
+    },
+  },
+  // cancellation_friction
+  {
+    category: "cancellation_friction",
+    rule: "phone-or-mail",
+    re: PHONE_OR_MAIL,
+    when: (c) =>
+      CANCEL.test(c.t) &&
+      !/\b(or|and) (by )?(online|in your account|in the app|through your account|via your account|chat|chatting|live chat|e-?mail(ing)?)\b/.test(c.t),
+    severity: () => "high",
+    text: (c) => {
+      const n = noticeDays(c.t);
+      const mail = /mail|writing|written|post\b|letter/.test(c.m[0]);
+      return {
+        title: (mail ? "Cancel by mail only" : "Cancel by phone only") + (n ? ", " + n + " days' notice" : ""),
+        summary:
+          (mail ? "You can only cancel in writing by mail" : "You can only cancel by calling") +
+          (n ? ", and you must give " + n + " days' notice." : "."),
+      };
+    },
+  },
+  {
+    category: "cancellation_friction",
+    rule: "notice-period",
+    re: new RegExp(NUM + "[- ](calendar |business )?days?'?s?'? (prior |advance |written )?notice|notice (period )?of (at least |not less than )?" + NUM + " (calendar |business )?days|(at least|no later than|no less than|minimum of) " + NUM + " (calendar |business )?days (before|prior|in advance)"),
+    when: (c) => CANCEL.test(c.t),
+    severity: (c) => ((noticeDays(c.t) ?? 0) >= 30 ? "high" : "medium"),
+    text: (c) => {
+      const n = noticeDays(c.t);
+      return {
+        title: "Cancelling needs " + (n ?? "advance") + (n ? " days'" : "") + " notice",
+        summary: "You must tell them" + (n ? " " + n + " days" : "") + " before you want to cancel, so you may pay for extra time.",
+      };
+    },
+  },
+  {
+    category: "cancellation_friction",
+    rule: "contact-support",
+    re: /\b(must|need to|have to|required to|only by|only through) (contact|email|call|reach|write to) (our |the )?(customer )?(support|service|care|team|us)\b|\bcannot be cancell?ed online\b|\bcan(not|'t) cancel online\b/,
+    negatable: false,
+    when: (c) => CANCEL.test(c.t) && SUBSCRIPTION_CONTEXT.test(c.t),
+    severity: (c) => (/online/.test(c.m[0]) || PHONE_OR_MAIL.test(c.t) ? "high" : "medium"),
+    text: () => ({
+      title: "You must contact support to cancel",
+      summary: "You cannot cancel yourself in your account; you have to contact the company and ask.",
+    }),
+  },
+  // termination_fee
+  {
+    category: "termination_fee",
+    rule: "etf",
+    re: /\b(early termination (fee|charge|penalty)s?|termination (fee|charge|penalty)s?|early cancell?ation (fee|charge|penalty)s?|cancell?ation (fee|charge|penalty)s?|exit (fee|charge)s?|liquidated damages|(pay|charged?|owe|billed)( for)? (the |all )?(remaining|remainder of (the|your)) (months|term|balance|subscription|contract|commitment|minimum term))/,
+    severity: () => "high",
+    text: (c) => {
+      const amt = money(c) ?? findPercent(c.s);
+      return {
+        title: "Fee for cancelling early",
+        summary: "If you cancel before the term ends, you pay an extra fee" + (amt ? " of " + amt : "") + ".",
+        costImpact: amt ? amt + " early termination fee" : undefined,
+      };
+    },
+  },
+  // no_refund
+  {
+    category: "no_refund",
+    rule: "final-sale",
+    re: /\b(all (sales|purchases|payments|orders) (are )?(final|non-?refundable)|no refunds?\b(?! (is|are) (needed|required))|non-?refundable|no money[- ]back|(will|do|does|shall|cannot|can't|won't) not? ?(be )?(issue|give|provide|offer|receive|grant|eligible for|entitled to)\w* (a |any )?(refund|money back)|refunds? (are|is|will be) not (available|offered|provided|issued|given|possible)|not (be )?(eligible|entitled) (for|to) (a |any )?refunds?|we do not (offer|issue|give|provide) refunds?)/,
+    negatable: false,
+    // "Shipping charges are non-refundable" on its own is normal; do not call it a no-refund policy.
+    when: (c) => {
+      const before = c.t.slice(0, c.m.index);
+      if (ARBITRATION_CONTEXT.test(c.t)) return false;
+      // Gift cards and shipping being final or non-refundable is normal; the purchase itself is what matters.
+      if (/\b(shipping|delivery|postage|gift wrap|gift cards?|customs|duties)\b/.test(before)) return false;
+      // "Returns that do not comply ... may not be eligible for a refund": a condition, not a policy.
+      if (/\b(eligible|entitled)\b/.test(c.m[0]) && (/\bmay not\b/.test(c.t) || /\b(if|unless|that do not|which do not|that are not)\b/.test(before)))
+        return false;
+      return true;
+    },
+    severity: () => "high",
+    text: () => ({
+      title: "No refunds",
+      summary: "Once you pay, you cannot get your money back.",
+    }),
+  },
+  {
+    category: "no_refund",
+    rule: "store-credit",
+    re: /\b(store credit only|only (in the form of |as |issue |offer )?(a )?store credit|refunds? (are |will be )?(issued |given |provided |offered )?(only )?(as|in the form of|in) (a )?(store credit|gift card|voucher|credit))/,
+    severity: () => "medium",
+    text: () => ({
+      title: "Refunds only as store credit",
+      summary: "If you return something, you get store credit instead of your money back.",
+    }),
+  },
+  {
+    category: "no_refund",
+    rule: "short-window",
+    re: new RegExp(
+      "(refund|return)[^.]{0,80}?within " + NUM + " (calendar |business )?days (of|from|after) (the )?(date of )?(purchase|delivery|receipt|receiving|buying|your (order|purchase|delivery)|the (order|purchase|delivery))|" +
+        NUM + "[- ]day (refund|return|money-back) (window|period|policy|guarantee)",
+    ),
+    when: (c) => {
+      // Processing times ("we issue the refund within 5 days") are not limits on the shopper.
+      if (/\b(we|our team) (will )?(inspect|process|issue|send|refund)\b|goes back|be (processed|credited|issued)/.test(c.t)) return false;
+      const m = new RegExp("within " + NUM + " |" + NUM + "[- ]day").exec(c.t);
+      const n = m ? toNumber(m[1] ?? m[2]) : undefined;
+      return n !== undefined && n <= 14;
+    },
+    severity: () => "medium",
+    text: (c) => {
+      const m = new RegExp("within " + NUM + " |" + NUM + "[- ]day").exec(c.t);
+      const n = m ? toNumber(m[1] ?? m[2]) : undefined;
+      return {
+        title: "Short refund window" + (n ? " (" + n + " days)" : ""),
+        summary: "You only have" + (n ? " " + n + " days" : " a short time") + " to ask for a refund.",
+      };
+    },
+  },
+  // return_cost
+  {
+    category: "return_cost",
+    rule: "restocking",
+    re: /\brestocking (fee|charge)s?\b/,
+    severity: () => "medium",
+    text: (c) => {
+      const amt = findPercent(c.s) ?? money(c);
+      return {
+        title: "Restocking fee on returns" + (amt ? " (" + amt + ")" : ""),
+        summary: "Returning an item costs you" + (amt ? " a " + amt + " restocking fee" : " a restocking fee") + " taken from your refund.",
+        costImpact: amt ? amt + " restocking fee" : undefined,
+      };
+    },
+  },
+  {
+    category: "return_cost",
+    rule: "buyer-pays-return-shipping",
+    re: /\b((you|buyer|customer|customers|purchaser)( is| are| will be)? (responsible for|pays?|must pay|will pay|bears?|covers?|cover) (all |the |any )?(costs? of )?(return shipping|return postage|shipping costs? (for|of) (the )?returns?|the cost of (the )?return( shipping)?|return delivery)|return (shipping|postage)( costs?| fees?| charges?)? (are|is|will be) (paid by (you|the (buyer|customer))|the (buyer|customer)'?s? responsibility|your responsibility|at your (own )?expense|at the (buyer|customer)'?s? expense|deducted|non-?refundable)|(return shipping|return label)( fee| cost)?[^.]{0,40}deducted from (your|the) refund)/,
+    severity: () => "medium",
+    text: (c) => ({
+      title: "You pay return shipping",
+      summary: "If you send something back, the cost of shipping it is yours.",
+      costImpact: money(c) ? money(c) + " return shipping" : undefined,
+    }),
+  },
+  // price_change
+  {
+    category: "price_change",
+    rule: "may-change-price",
+    re: /\b((we )?(may|can|reserve the right to|are entitled to) (change|modify|adjust|increase|raise|update) (our |the |your |its |any )?(subscription |membership )?(prices?|pricing|fees|rates?|charges)|(prices?|pricing|fees) (are|is) subject to change|(prices?|pricing) (may|can|will) (change|increase|go up))/,
+    severity: (c) => (NO_REMINDER.test(c.t) || /\bat any time\b(?![^.]*notice)/.test(c.t) && !/notif|notice|email you|tell you/.test(c.t) ? "high" : "medium"),
+    text: (c) => {
+      const high = NO_REMINDER.test(c.t);
+      return {
+        title: high ? "Price can change without notice" : "Price can change",
+        summary: high
+          ? "They can raise what you pay at any time without telling you first."
+          : "They can raise what you pay; check how they tell you before it happens.",
+      };
+    },
+  },
+  // extra_fees
+  {
+    category: "extra_fees",
+    rule: "named-fee",
+    re: /\b(service|processing|convenience|handling|administrative|admin|booking|platform|transaction|activation|setup|set-up) (fee|charge|surcharge)s?\b|\bsurcharges?\b/,
+    when: (c) => !/\brestocking\b/.test(c.t) && !ARBITRATION_CONTEXT.test(c.t) && !/\b(taxes and|such as taxes)\b[^.]{0,30}\bpossible\b|\b(issuer|your bank|card provider)\b/.test(c.t),
+    severity: () => "medium",
+    text: (c) => {
+      const amt = money(c);
+      return {
+        title: "Extra fees on top of the price",
+        summary: "You pay a named fee" + (amt ? " of " + amt : "") + " on top of the price, tax and shipping.",
+        costImpact: amt ? amt + " fee" : undefined,
+      };
+    },
+  },
+  // arbitration
+  {
+    category: "arbitration",
+    rule: "arbitration",
+    re: /\b(binding (individual )?arbitration|arbitration (agreement|clause|provision)|resolved? (exclusively |solely )?(by|through) (final and binding |binding )?arbitration|submit(ted)? to (binding )?arbitration|(waive|waiving|give up) (any |your |the )?(right|rights) to (a )?(jury trial|trial by jury|participate in a class|bring a class|class action)|class[- ]action waiver|(no|not) (participate|bring|join) (in )?(a |any )?class[- ]action|on an individual basis(,)? (and )?not (as a|in a) (class|representative))/,
+    negatable: true,
+    severity: () => "low",
+    text: () => ({
+      title: "Disputes go to private arbitration",
+      summary: "You give up the right to sue in court or join a class action.",
+    }),
+  },
+  // data_sharing
+  {
+    category: "data_sharing",
+    rule: "sells-data",
+    re: /\b((we )?(may |will |can )?sell (your |the |certain )?(personal (data|information)|data|information)|sale of (your )?personal (data|information)|(sold|rent(ed)?) to (third parties|data brokers|advertisers))/,
+    severity: () => "medium",
+    text: () => ({
+      title: "May sell your personal data",
+      summary: "Your personal information can be sold to other companies.",
+    }),
+  },
+  {
+    category: "data_sharing",
+    rule: "shares-with-partners",
+    re: /\bshar(e|es|ed|ing) (your |the )?(personal )?(data|information|details)[^.]{0,60}?\b(advertising partners|marketing partners|data brokers|advertisers|for (their own )?(marketing|advertising) purposes)/,
+    severity: () => "low",
+    text: () => ({
+      title: "Shares your data with partners",
+      summary: "Your personal information is shared with advertising or marketing partners.",
+    }),
+  },
+];
+
+function quoteFor(c: Ctx): string {
+  const max = LIMITS.maxQuoteChars;
+  if (c.s.length <= max) return c.s;
+  return clip(windowAround(c.s, c.m.index, c.m.index + c.m[0].length, max), max);
+}
+
+/** All rule hits in one paragraph. */
+export function matchParagraph(p: Paragraph): RuleHit[] {
+  const hits: RuleHit[] = [];
+  for (const s of splitSentences(p.text)) {
+    // Headings ("Restocking fee") are not clauses; the sentence that follows them is.
+    if (wordCount(s) < 5) continue;
+    const t = lpNormalize(s);
+    for (const pat of PATTERNS) {
+      const m = pat.re.exec(t);
+      if (!m) continue;
+      const c: Ctx = { s, t, m };
+      if (pat.negatable !== false && isNegated(t, m.index, m.index + m[0].length)) continue;
+      if (pat.when && !pat.when(c)) continue;
+      const txt = pat.text(c);
+      hits.push({
+        category: pat.category,
+        severity: pat.severity(c),
+        title: clip(txt.title, LIMITS.maxTitleChars),
+        summary: clipWords(txt.summary, LIMITS.maxSummaryWords),
+        costImpact: txt.costImpact,
+        quote: quoteFor(c),
+        paragraphIndex: p.index,
+        rule: pat.rule,
+      });
+    }
+  }
+  return hits;
+}
+
+/** All rule hits in a list of paragraphs, in document order. */
+export function runRules(paragraphs: Paragraph[]): RuleHit[] {
+  return paragraphs.flatMap(matchParagraph);
+}
+
+/** Best hit per category: highest severity, then earliest. Sorted by CATEGORY_ORDER. */
+export function bestPerCategory<T extends { category: Category; severity: Severity }>(hits: T[]): T[] {
+  const best = new Map<Category, T>();
+  for (const h of hits) {
+    const b = best.get(h.category);
+    if (!b || SEVERITY_RANK[h.severity] > SEVERITY_RANK[b.severity]) best.set(h.category, h);
+  }
+  return CATEGORY_ORDER.filter((c) => best.has(c)).map((c) => best.get(c)!);
+}

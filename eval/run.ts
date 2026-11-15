@@ -1,0 +1,255 @@
+/**
+ * npm run eval (Q-01): run labelled policies through the real pipeline and print
+ * per-category precision/recall, verdict accuracy, the share of model findings dropped
+ * by quote verification, and median latency. Writes eval/results.md.
+ *
+ * Two sets, reported separately:
+ *  - fixtures: every site in fixtures/golden.json (fictional stores, built to plant clauses)
+ *  - real-world: eval/real/labels.json + eval/real/*.txt when present (git-ignored, local only)
+ *
+ * The LLM provider comes from server/.env (LLM_PROVIDER=mock by default). Each case runs
+ * against a fresh in-memory store, so nothing is served from cache.
+ */
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { CATEGORY_ORDER, GoldenSchema, stripPageUrl } from "@xcavate/shared";
+import type { AnalyzeRequest, Category, PolicyKind, Report, Verdict } from "@xcavate/shared";
+import { z } from "zod";
+import { FIXTURES_DIR } from "../fixtures/load.js";
+import { buildRequest, caseById } from "../server/scripts/fixtureRequests.js";
+import { loadConfig } from "../server/src/config.js";
+import { loadEnv } from "../server/src/env.js";
+import { createLlm } from "../server/src/llm/index.js";
+import { setSilent } from "../server/src/log.js";
+import { runAnalysis } from "../server/src/pipeline/run.js";
+import { openStore } from "../server/src/store/index.js";
+
+const EVAL_DIR = dirname(fileURLToPath(import.meta.url));
+const REAL_DIR = process.env.EVAL_REAL_DIR || join(EVAL_DIR, "real");
+
+setSilent(true);
+loadEnv();
+const config = loadConfig();
+const llm = createLlm(config);
+
+interface Case {
+  id: string;
+  request: AnalyzeRequest;
+  expected: Category[];
+  forbidden?: Category[];
+  verdict: Verdict;
+}
+
+interface Outcome {
+  c: Case;
+  report: Report;
+  ms: number;
+}
+
+// ---------- case loading ----------
+
+function fixtureCases(): Case[] {
+  const golden = GoldenSchema.parse(JSON.parse(readFileSync(join(FIXTURES_DIR, "golden.json"), "utf8")));
+  return golden.sites.map((s) => ({
+    id: s.id,
+    request: buildRequest(caseById(s.id)),
+    expected: s.categories,
+    forbidden: s.forbidden,
+    verdict: s.verdict,
+  }));
+}
+
+const RealItem = z.object({
+  id: z.string(),
+  site: z.string().optional(),
+  url: z.string(),
+  kind: z.string().optional(),
+  file: z.string(),
+  expectedCategories: z.array(z.string()),
+  expectedVerdict: z.string(),
+  evidence: z.unknown().optional(),
+});
+
+const KINDS: PolicyKind[] = ["subscription", "refund", "terms", "privacy", "other"];
+
+function realCases(): { cases: Case[]; skipped: string[] } | undefined {
+  const labelsPath = join(REAL_DIR, "labels.json");
+  if (!existsSync(labelsPath)) return undefined;
+  const raw = JSON.parse(readFileSync(labelsPath, "utf8"));
+  const items = z.array(RealItem).parse(Array.isArray(raw) ? raw : raw.items);
+  const cases: Case[] = [];
+  const skipped: string[] = [];
+  for (const it of items) {
+    const path = isAbsolute(it.file) ? it.file : join(REAL_DIR, it.file.replace(/^eval\/real\//, ""));
+    const cats = it.expectedCategories.filter((c): c is Category => (CATEGORY_ORDER as readonly string[]).includes(c));
+    const verdict = (["red", "yellow", "green", "unknown"] as const).find((v) => v === it.expectedVerdict);
+    if (!existsSync(path) || !verdict || cats.length !== it.expectedCategories.length) {
+      skipped.push(it.id + (!existsSync(path) ? " (file missing)" : " (bad label)"));
+      continue;
+    }
+    const text = readFileSync(path, "utf8").slice(0, 200_000);
+    const kind = KINDS.find((k) => k === it.kind) ?? "terms";
+    let pageUrl: string;
+    try {
+      pageUrl = stripPageUrl(it.url);
+    } catch {
+      skipped.push(it.id + " (bad url)");
+      continue;
+    }
+    cases.push({
+      id: it.id,
+      request: { pageUrl, pageType: "none", linksFound: 1, policies: [{ url: pageUrl, kind, text }] },
+      expected: cats,
+      verdict,
+    });
+  }
+  return { cases, skipped };
+}
+
+// ---------- running and scoring ----------
+
+async function run(cases: Case[]): Promise<Outcome[]> {
+  const out: Outcome[] = [];
+  for (const c of cases) {
+    const store = openStore(":memory:", "memory");
+    const t0 = performance.now();
+    const report = await runAnalysis(c.request, { store, llm });
+    out.push({ c, report, ms: performance.now() - t0 });
+    store.close();
+  }
+  return out;
+}
+
+interface Metrics {
+  n: number;
+  perCategory: { category: Category; tp: number; fp: number; fn: number }[];
+  micro: { tp: number; fp: number; fn: number };
+  verdictCorrect: number;
+  dropped: number;
+  modelKept: number;
+  medianMs: number;
+  usedLlm: number;
+  forbiddenHits: string[];
+}
+
+function score(outcomes: Outcome[]): Metrics {
+  const perCategory = CATEGORY_ORDER.map((category) => ({ category, tp: 0, fp: 0, fn: 0 }));
+  const forbiddenHits: string[] = [];
+  let verdictCorrect = 0;
+  let dropped = 0;
+  let modelKept = 0;
+  let usedLlm = 0;
+  for (const { c, report } of outcomes) {
+    const got = new Set(report.flags.map((f) => f.category));
+    const want = new Set(c.expected);
+    for (const row of perCategory) {
+      if (got.has(row.category) && want.has(row.category)) row.tp++;
+      else if (got.has(row.category)) row.fp++;
+      else if (want.has(row.category)) row.fn++;
+    }
+    for (const f of c.forbidden ?? []) if (got.has(f)) forbiddenHits.push(c.id + ":" + f);
+    if (report.verdict === c.verdict) verdictCorrect++;
+    dropped += report.stats.droppedUnverified;
+    modelKept += report.flags.filter((f) => f.source !== "rules").length;
+    if (report.stats.usedLlm) usedLlm++;
+  }
+  const ms = outcomes.map((o) => o.ms).sort((a, b) => a - b);
+  const mid = Math.floor(ms.length / 2);
+  const medianMs = ms.length === 0 ? 0 : ms.length % 2 ? ms[mid] : (ms[mid - 1] + ms[mid]) / 2;
+  const micro = perCategory.reduce((a, r) => ({ tp: a.tp + r.tp, fp: a.fp + r.fp, fn: a.fn + r.fn }), { tp: 0, fp: 0, fn: 0 });
+  return { n: outcomes.length, perCategory, micro, verdictCorrect, dropped, modelKept, medianMs, usedLlm, forbiddenHits };
+}
+
+const pct = (num: number, den: number) => (den === 0 ? "n/a" : ((100 * num) / den).toFixed(0) + "%");
+
+function tables(title: string, outcomes: Outcome[], m: Metrics, note: string): string {
+  const rows = m.perCategory.filter((r) => r.tp + r.fp + r.fn > 0);
+  const lines = [
+    `## ${title}`,
+    "",
+    note,
+    "",
+    `Sample size: **${m.n}** cases. Verdict accuracy: **${m.verdictCorrect}/${m.n} (${pct(m.verdictCorrect, m.n)})**. ` +
+      `Micro precision ${pct(m.micro.tp, m.micro.tp + m.micro.fp)}, recall ${pct(m.micro.tp, m.micro.tp + m.micro.fn)}. ` +
+      `Median latency ${m.medianMs.toFixed(0)} ms. LLM answered in ${m.usedLlm}/${m.n} cases.`,
+    "",
+    `Dropped by quote verification: ${m.dropped} of ${m.dropped + m.modelKept} model findings (${pct(m.dropped, m.dropped + m.modelKept)}).`,
+    "",
+    "| Category | TP | FP | FN | Precision | Recall |",
+    "|---|---:|---:|---:|---:|---:|",
+    ...rows.map((r) => `| ${r.category} | ${r.tp} | ${r.fp} | ${r.fn} | ${pct(r.tp, r.tp + r.fp)} | ${pct(r.tp, r.tp + r.fn)} |`),
+    "",
+    "| Case | Expected verdict | Got | Expected categories | Got categories | ms |",
+    "|---|---|---|---|---|---:|",
+    ...outcomes.map(
+      (o) =>
+        `| ${o.c.id} | ${o.c.verdict} | ${o.report.verdict}${o.report.verdict === o.c.verdict ? "" : " (miss)"} | ${o.c.expected.join(", ") || "none"} | ${
+          o.report.flags.map((f) => f.category).join(", ") || "none"
+        } | ${o.ms.toFixed(0)} |`,
+    ),
+    "",
+  ];
+  if (m.forbiddenHits.length) lines.push(`Forbidden categories that fired: ${m.forbiddenHits.join(", ")}`, "");
+  return lines.join("\n");
+}
+
+function consoleSummary(title: string, m: Metrics): string {
+  const rows = m.perCategory.filter((r) => r.tp + r.fp + r.fn > 0);
+  return [
+    `${title}: n=${m.n}, verdict ${m.verdictCorrect}/${m.n}, precision ${pct(m.micro.tp, m.micro.tp + m.micro.fp)}, recall ${pct(m.micro.tp, m.micro.tp + m.micro.fn)}, dropped ${m.dropped}/${m.dropped + m.modelKept}, median ${m.medianMs.toFixed(0)} ms`,
+    "  category               TP  FP  FN  prec  recall",
+    ...rows.map(
+      (r) =>
+        "  " + r.category.padEnd(22) + String(r.tp).padStart(3) + String(r.fp).padStart(4) + String(r.fn).padStart(4) + pct(r.tp, r.tp + r.fp).padStart(6) + pct(r.tp, r.tp + r.fn).padStart(8),
+    ),
+  ].join("\n");
+}
+
+// ---------- main ----------
+
+const fx = await run(fixtureCases());
+const fxm = score(fx);
+const real = realCases();
+const rl = real && real.cases.length ? await run(real.cases) : [];
+const rlm = score(rl);
+
+const header = [
+  "# Xcavate eval results",
+  "",
+  `Generated ${new Date().toISOString()} by \`npm run eval\`. LLM provider: **${llm.provider}**${llm.provider === "anthropic" ? ` (model ${config.llmModel})` : " (offline: rules engine + mock model)"}.`,
+  "",
+  "Scoring: a category counts as predicted when the report has a flag of that category. Any predicted category not in the",
+  "label counts as a false positive (strict). \"Dropped by quote verification\" is model findings whose quote was not found in",
+  "the policy text, over all model findings that reached verification (dropped + kept).",
+  "",
+].join("\n");
+
+const fixtureNote =
+  "Fictional fixture stores from `fixtures/golden.json` (built by the team with planted clauses, so these numbers show the " +
+  "pipeline works end to end; they are not an accuracy claim about real sites).";
+let realSection: string;
+if (!real) realSection = "## Real-world policies\n\nNot run: `eval/real/labels.json` is not present (the folder is local-only and git-ignored).\n";
+else if (rl.length === 0)
+  realSection = `## Real-world policies\n\nNo usable items in \`eval/real/labels.json\`.${real.skipped.length ? " Skipped: " + real.skipped.join(", ") + "." : ""}\n`;
+else
+  realSection =
+    tables(
+      "Real-world policies",
+      rl,
+      rlm,
+      "Saved texts of real policies in `eval/real/` (local only), labelled by hand. Each item is one policy analysed on its own (pageType \"none\")." +
+        (real.skipped.length ? ` Skipped: ${real.skipped.join(", ")}.` : ""),
+    );
+
+const md = header + "\n" + tables("Fixture stores", fx, fxm, fixtureNote) + "\n" + realSection;
+writeFileSync(join(EVAL_DIR, "results.md"), md);
+
+process.stdout.write(
+  [
+    `LLM provider: ${llm.provider}`,
+    consoleSummary("Fixtures", fxm),
+    real ? (rl.length ? consoleSummary("Real-world", rlm) : "Real-world: no usable items") : "Real-world: skipped (eval/real/labels.json not found)",
+    "Wrote eval/results.md",
+  ].join("\n\n") + "\n",
+);
