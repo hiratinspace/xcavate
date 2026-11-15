@@ -1,4 +1,4 @@
-import { REPORT_TTL_MS, type DarkPatternFinding, type LocalCheck, type FeeSummary, type PageType, type Report, type TabStatus } from "@xcavate/shared";
+import { REPORT_TTL_MS, type DarkPatternFinding, type WatcherFinding, type LocalCheck, type FeeSummary, type PageType, type Report, type TabStatus } from "@xcavate/shared";
 
 /**
  * Storage owned by the service worker (BUILD_PLAN 6.4).
@@ -16,6 +16,7 @@ export interface StoredTab {
   pageType?: PageType;
   fees?: FeeSummary;
   darkPatterns?: DarkPatternFinding[];
+  watchers?: WatcherFinding[];
   error?: string;
   /**
    * V-06: the on-device rules-only report for this page. It lives only in tab state (never in the

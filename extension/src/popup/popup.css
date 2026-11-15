@@ -117,6 +117,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .rights-text { margin: 2px 0 0; font-size: 12.5px; }
 .rights a { overflow-wrap: anywhere; }
 .partial { background: #EEEFEF; border-top: 1px solid #55606A; }
+.watch { background: #F4EFE6; border-top: 1px solid var(--clay); }
+.watch .says { margin-top: 8px; }
 .local { background: #FBF1DA; border-top: 1px solid var(--amber); }
 .fee-lines { width: 100%; border-collapse: collapse; margin-top: 2px; font-variant-numeric: tabular-nums; }
 .fee-lines td { padding: 3px 0; border-bottom: 1px dotted var(--rule); }

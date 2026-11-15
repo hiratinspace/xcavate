@@ -94,6 +94,9 @@ test.describe("Xcavate in a real Chromium", () => {
     expect(state.darkPatterns?.some((d) => d.kind === "prechecked_addon" && /protection/i.test(d.label))).toBe(true);
     expect(card.text).toMatch(/Service fee \$4\.95/);
     expect(card.text).toMatch(/ticked for you/);
+    // Watching this checkout: the recorder and the pixel, not the consent-parked Clarity tag.
+    expect(state.watchers?.map((w) => w.vendor)).toEqual(["Hotjar", "Meta"]);
+    expect(card.text).toMatch(/Watching this checkout: Hotjar \(session recording\); Meta \(ad tracking\)/);
 
     // The extension never changes the shopper's choice.
     const protection = page.locator("#protection");

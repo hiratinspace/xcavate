@@ -1,4 +1,4 @@
-import type { AnalyzeRequest, DarkPatternFinding, FeeSummary, PageType, Report, TabStatus } from "./types.js";
+import type { AnalyzeRequest, DarkPatternFinding, FeeSummary, WatcherFinding, PageType, Report, TabStatus } from "./types.js";
 
 /** chrome.runtime message types (section 6.3). */
 export const MSG = {
@@ -28,7 +28,11 @@ export type Message =
    * (never sent anywhere) so the card shows a first verdict early. A full ANALYZE follows.
    */
   | ({ type: "ANALYZE" } & { request: AnalyzeRequest; page?: string; preliminary?: boolean })
-  | { type: "LOCAL_FINDINGS"; fees?: FeeSummary; darkPatterns?: DarkPatternFinding[] }
+  /**
+   * content → bg, local only. `thirdParty`: third-party addresses the page loaded ("host/path", no
+   * query); the worker matches them to session recorders and ad pixels and replies with the result.
+   */
+  | { type: "LOCAL_FINDINGS"; fees?: FeeSummary; darkPatterns?: DarkPatternFinding[]; thirdParty?: string[] }
   /**
    * bg → content. `page` is the query-less address the report was made for; the content script
    * drops a report for any other page (a late reply after the shopper moved on).
@@ -54,11 +58,14 @@ export interface PageReadyReply { report?: Report; paused?: boolean; dismissed?:
 export interface FetchHtmlReply { ok: boolean; html?: string; status?: number; finalUrl?: string }
 export interface AnalyzeReply { ok: boolean; report?: Report; error?: string }
 export interface OkReply { ok: boolean; error?: string }
+export interface LocalFindingsReply { ok: boolean; watchers?: WatcherFinding[] }
 export interface TabState {
   status: TabStatus;
   report?: Report;
   fees?: FeeSummary;
   darkPatterns?: DarkPatternFinding[];
+  /** Session recorders and ad pixels on the page (found on the device, never sent anywhere). */
+  watchers?: WatcherFinding[];
   pageType?: PageType;
   error?: string;
   /**

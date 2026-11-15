@@ -7,13 +7,14 @@ import {
   type PageReadyReply,
   type PageType,
 } from "@xcavate/shared/core";
-import type { DarkPatternFinding } from "@xcavate/shared/core";
+import type { DarkPatternFinding, LocalFindingsReply, WatcherFinding } from "@xcavate/shared/core";
 import { send } from "../lib/messaging";
 import { buildAnalyzeRequest } from "../lib/request";
 import { CARD_HOST_ID, Card, type CardPrefs } from "./card";
 import { classify, watchForLateQualify } from "./classifier";
 import { collectPolicies, waitForDomQuiet, type FetchedPage } from "./collect";
 import { DarkPatternMarkers, MARKS_HOST_ID, findDarkPatterns } from "./darkPatterns";
+import { thirdPartyAddresses, watchAddresses } from "./watchers";
 import { extractLiveDocument } from "./extractor";
 import { detectFees } from "./fees";
 import { watchNavigation } from "./spa";
@@ -74,26 +75,47 @@ export function startContent(win: Window = window): void {
   let analyzing = "";
   let localRefreshPending = false;
 
+  let stopWatchers: (() => void) | undefined;
   const clearMarkers = () => {
     markers?.destroy();
     markers = undefined;
+    stopWatchers?.();
+    stopWatchers = undefined;
   };
 
   const runLocalChecks = () => {
     clearMarkers();
     const fees = detectFees(doc);
     const hits = findDarkPatterns(doc);
-    // Local findings go to the service worker only; they are never sent to the backend.
-    const publish = (darkPatterns: DarkPatternFinding[]) => {
-      card.setLocal({ fees, darkPatterns });
-      void send({ type: MSG.LOCAL_FINDINGS, fees, darkPatterns });
+    let darkPatterns = hits.map((h) => h.finding);
+    let thirdParty = thirdPartyAddresses(doc);
+    let watchers: WatcherFinding[] = [];
+    // Local findings go to the service worker only; they are never sent to the backend. The worker
+    // matches the page's third-party addresses to known recorders and pixels and replies.
+    const publish = () => {
+      card.setLocal({ fees, darkPatterns, watchers });
+      void send<LocalFindingsReply>({ type: MSG.LOCAL_FINDINGS, fees, darkPatterns, thirdParty }).then((r) => {
+        const next = r?.watchers ?? [];
+        if (next.map((w) => w.vendor).join() === watchers.map((w) => w.vendor).join()) return;
+        watchers = next;
+        card.setLocal({ fees, darkPatterns, watchers });
+      });
     };
     if (hits.length) {
       markers = new DarkPatternMarkers(doc);
-      markers.onUpdate = publish; // the shopper unticked a box: drop it from the card and popup too
+      // The shopper unticked a box: drop it from the card and popup too.
+      markers.onUpdate = (next: DarkPatternFinding[]) => {
+        darkPatterns = next;
+        publish();
+      };
       markers.mark(hits);
     }
-    publish(hits.map((h) => h.finding));
+    // Trackers often arrive after the page: keep the list current for a minute.
+    stopWatchers = watchAddresses(doc, (next) => {
+      thirdParty = next;
+      publish();
+    });
+    publish();
   };
 
   const hideCard = () => {

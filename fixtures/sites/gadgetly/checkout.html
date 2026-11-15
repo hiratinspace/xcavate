@@ -38,6 +38,14 @@ input[type=text],input[type=email],input[type=tel]{width:100%;padding:10px;borde
 .legal-note{font-size:13px;color:#555}
 </style>
 <link rel="stylesheet" href="/demo/store.css">
+  <!-- "Watching this checkout" test: a session recorder and an ad pixel, as real stores load them.
+       Placeholder IDs. The integrity hash is deliberately wrong, so the browser never runs them. The e2e
+       browser maps these hosts to 127.0.0.1, so tests make no outside request; a manual demo downloads
+       the two public files and discards them. -->
+  <script async src="https://static.hotjar.com/c/hotjar-0.js?sv=6" integrity="sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" crossorigin="anonymous"></script>
+  <script async src="https://connect.facebook.net/en_US/fbevents.js" integrity="sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" crossorigin="anonymous"></script>
+  <!-- Parked by a consent manager until the shopper agrees: must NOT be reported. -->
+  <script type="text/plain" data-category="analytics" src="https://www.clarity.ms/tag/placeholder"></script>
 </head>
 <body>
 <div class="demo-ribbon"><a href="http://localhost:4000/">← Xcavate demo room</a><span>FICTIONAL STORE · NO REAL PAYMENTS</span></div>

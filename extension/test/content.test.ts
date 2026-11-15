@@ -89,6 +89,13 @@ describe("content orchestrator (D-06)", () => {
     expect(body).not.toContain("extrasTotal");
     expect(body).not.toContain("prechecked");
     expect(body).not.toContain("Protection plan (+$12.99)");
+    // Watchers: found from the page's scripts, kept local like fees.
+    expect(local.thirdParty).toContain("static.hotjar.com/c/hotjar-0.js");
+    expect(local.thirdParty).toContain("connect.facebook.net/en_US/fbevents.js");
+    expect(local.thirdParty?.some((a) => a.includes("clarity.ms"))).toBe(false); // consent-parked, never runs
+    expect(local.thirdParty?.some((a) => a.includes("?"))).toBe(false); // no query strings
+    expect(body).not.toContain("hotjar");
+    expect(body).not.toContain("thirdParty");
     // The pre-checked box is still checked: we never touch inputs.
     expect((document.getElementById("protection") as HTMLInputElement).checked).toBe(true);
   });

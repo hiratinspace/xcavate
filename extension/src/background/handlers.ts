@@ -9,6 +9,7 @@ import {
   type FetchHtmlReply,
   type Message,
   type OkReply,
+  type LocalFindingsReply,
   type PageReadyReply,
   type Report,
   type Settings,
@@ -20,6 +21,7 @@ import { fetchCapped } from "../lib/fetchCapped";
 import { isFetchAllowed } from "../lib/netguard";
 import { buildAnalyzeRequest } from "../lib/request";
 import { isActiveFor, loadSettings } from "../lib/settings";
+import { matchWatchers } from "../lib/watchers";
 import { fetchProvider, lookupReport, postAnalyze } from "./api";
 import { setBadge } from "./badge";
 import {
@@ -402,10 +404,11 @@ export function createHandlers(deps: Deps = {}) {
     }
   }
 
-  async function localFindings(msg: Extract<Message, { type: "LOCAL_FINDINGS" }>, tabId?: number): Promise<OkReply> {
+  async function localFindings(msg: Extract<Message, { type: "LOCAL_FINDINGS" }>, tabId?: number): Promise<LocalFindingsReply> {
     // Stored for the popup only. Never sent to the backend.
-    if (tabId !== undefined) await updateTab(tabId, (cur) => ({ ...cur, fees: msg.fees, darkPatterns: msg.darkPatterns }));
-    return { ok: true };
+    const watchers = matchWatchers(Array.isArray(msg.thirdParty) ? msg.thirdParty.slice(0, 300) : []);
+    if (tabId !== undefined) await updateTab(tabId, (cur) => ({ ...cur, fees: msg.fees, darkPatterns: msg.darkPatterns, watchers }));
+    return { ok: true, watchers };
   }
 
   /** Only for a content script in a tab, and never into the local network unless that tab is local too. */
@@ -451,7 +454,7 @@ export function createHandlers(deps: Deps = {}) {
     }
     const local = tab.status !== "idle" && tab.status !== "error" ? tab.localReport : undefined;
     const report = local ?? (tab.domain && tab.status !== "idle" ? await getCachedReport(tab.domain, now()) : undefined);
-    const state: TabState = { status: tab.status, report, fees: tab.fees, darkPatterns: tab.darkPatterns, pageType: tab.pageType, error: tab.error };
+    const state: TabState = { status: tab.status, report, fees: tab.fees, darkPatterns: tab.darkPatterns, watchers: tab.watchers, pageType: tab.pageType, error: tab.error };
     if (local && tab.localCheck) state.localCheck = tab.localCheck;
     return state;
   }

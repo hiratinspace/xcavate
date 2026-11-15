@@ -17,6 +17,7 @@ export type Report = z.infer<typeof S.ReportSchema>;
 export type FeeLine = z.infer<typeof S.FeeLineSchema>;
 export type FeeSummary = z.infer<typeof S.FeeSummarySchema>;
 export type DarkPatternFinding = z.infer<typeof S.DarkPatternFindingSchema>;
+export type WatcherFinding = z.infer<typeof S.WatcherFindingSchema>;
 export type LlmFinding = z.infer<typeof S.LlmFindingSchema>;
 export type LlmOutput = z.infer<typeof S.LlmOutputSchema>;
 export type Golden = z.infer<typeof S.GoldenSchema>;

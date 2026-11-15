@@ -57,6 +57,7 @@ Fee and add-on checks run inside the page. Form contents are never read. The ext
 | **Money-first warnings** | Auto-renewal, trial converts to paid, hard to cancel, early termination fee, limited refunds, return costs, price changes, extra fees. Arbitration and data sharing are listed in the full report but never drive the verdict. |
 | **Context lines** | *"Common for streaming services. What matters is how you cancel."* A plain renewal with online cancellation is not treated as a trap. |
 | **Hidden fees and pre-checked add-ons** | "Service fee $4.95" in the order summary, or a protection plan ticked for you, is pointed out. Xcavate never unticks it. |
+| **Who's watching this checkout** | Session recorders (Hotjar, FullStory, Clarity...) and ad pixels (Meta, TikTok...) loaded on the page are named, next to what the privacy policy says about sharing. Found on your device from script addresses only; nothing is sent and nothing is blocked. |
 | **Cancellation helper** | Method, steps, notice period and contact, plus an email draft you send yourself. |
 | **Your rights note** | Phone-only cancellation for a subscription you can start online gets a short, sourced note about California law, worded as information. |
 | **Instant on-device verdict** | The rules engine runs in the extension, so a verdict appears at once. The AI check upgrades it when the backend answers, and can be turned off entirely. |

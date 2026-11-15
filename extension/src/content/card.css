@@ -71,6 +71,7 @@
 .note b { font-weight: 700 }
 .note.local { background: #FBF1DA; border-top-color: #EBD9AE }
 .note.coverage { color: var(--muted) }
+.note.watch { background: #F4EFE6 }
 .note.change { background: #F4EFE6; border-top-color: var(--rule) }
 .empty { margin: 0; padding: 10px 12px 10px 14px; color: var(--muted); font-size: 12.5px }
 .foot { padding: 8px 12px 8px 14px; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px }

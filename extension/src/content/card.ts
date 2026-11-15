@@ -7,6 +7,7 @@ import {
   type FeeSummary,
   type Flag,
   type Report,
+  type WatcherFinding,
 } from "@xcavate/shared/core";
 import cardCss from "./card.css?inline";
 import { icon } from "./icons";
@@ -51,6 +52,7 @@ export interface CardOptions {
 export interface LocalFindings {
   fees?: FeeSummary;
   darkPatterns?: DarkPatternFinding[];
+  watchers?: WatcherFinding[];
 }
 
 const HOST_STYLE =
@@ -264,6 +266,13 @@ export class Card {
       p.appendChild(d.createTextNode("Outlined on the page: " + dp.map((x) => shortLabel(x.label)).join("; ")));
       details.appendChild(p);
     }
+    const watch = this.local.watchers ?? [];
+    if (watch.length) {
+      const p = el(d, "p", "note watch");
+      p.appendChild(el(d, "b", "", "Watching this checkout: "));
+      p.appendChild(d.createTextNode(describeWatchers(watch) + "."));
+      details.appendChild(p);
+    }
 
     if (this.state === "report") {
       const foot = el(d, "div", "foot");
@@ -427,6 +436,14 @@ export function rightsBox(d: Document, note: string, keyPrefix?: string): HTMLEl
   }
   box.appendChild(p);
   return box;
+}
+
+/** "FullStory (session recording); Meta, TikTok (ad tracking)" for the card's one line. */
+export function describeWatchers(found: WatcherFinding[]): string {
+  const of = (k: WatcherFinding["kind"]) => found.filter((w) => w.kind === k).map((w) => w.vendor).join(", ");
+  const rec = of("session_replay");
+  const ads = of("ad_pixel");
+  return [rec && rec + " (session recording)", ads && ads + " (ad tracking)"].filter(Boolean).join("; ");
 }
 
 function button(d: Document, cls: string, text: string, key: string): HTMLElement {

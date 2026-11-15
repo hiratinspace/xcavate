@@ -123,6 +123,15 @@ export const DarkPatternFindingSchema = z.object({
 });
 
 /**
+ * A third-party script on the page that can watch the shopper: a session recorder or an ad pixel.
+ * Found on the device from script addresses only; never sent to the backend.
+ */
+export const WatcherFindingSchema = z.object({
+  kind: z.enum(["session_replay", "ad_pixel"]),
+  vendor: z.string().max(40),
+});
+
+/**
  * What the LLM must return (validated with zod, also passed to the API as a structured-output format).
  * Nullable instead of optional so every key is always present (structured outputs require "required").
  */

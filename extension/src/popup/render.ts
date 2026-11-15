@@ -7,6 +7,7 @@ import {
   type FeeSummary,
   type Flag,
   type Report,
+  type WatcherFinding,
   type Settings,
   type TabState,
 } from "@xcavate/shared/core";
@@ -52,11 +53,11 @@ export interface PopupActions {
 }
 
 export const PRIVACY_LINE =
-  "Sent for analysis: the site's address (domain only) and the text of the policy pages it links to. Scan this page also sends the text and address of the page you scan, so Xcavate refuses to scan checkout pages. Fees and ticked boxes stay on your computer.";
+  "Sent for analysis: the site's address (domain only) and the text of the policy pages it links to. Scan this page also sends the text and address of the page you scan, so Xcavate refuses to scan checkout pages. Fees, ticked boxes and the trackers found stay on your computer.";
 
 /** Privacy line with the AI check off (V-06): the rules engine runs on this device only. */
 export const PRIVACY_LINE_LOCAL =
-  "AI check is off, so nothing is sent to the Xcavate service. Policy pages are fetched from the site and checked on your device. Fees and ticked boxes stay on your computer.";
+  "AI check is off, so nothing is sent to the Xcavate service. Policy pages are fetched from the site and checked on your device. Fees, ticked boxes and the trackers found stay on your computer.";
 
 /** V-06: one quiet line when the report shown was worked out on this device. */
 export const LOCAL_CHECK_NOTE = {
@@ -102,6 +103,9 @@ export function renderPopup(root: HTMLElement, view: PopupView, actions: PopupAc
         h("ul", { class: "bullets" }, ...dp.map((d) => h("li", {}, d.label))),
       ),
     );
+
+  const watch = watchersSection(state?.watchers ?? [], report);
+  if (watch) local.push(watch);
 
   const parts: Child[] = [];
   parts.push(header(view, report, status));
@@ -369,6 +373,45 @@ function flagItem(f: Flag): HTMLElement {
 function rightsBox(note: string): HTMLElement {
   const parts = linkParts(note).map((x) => (x.href ? h("a", { href: x.href, target: "_blank", rel: "noopener noreferrer" }, x.text) : x.text));
   return h("div", { class: "rights" }, h("p", { class: "rights-label" }, RIGHTS_LABEL), h("p", { class: "rights-text" }, ...parts));
+}
+
+/**
+ * "Watching this checkout": recorders and ad pixels the page loaded, found on this device.
+ * When the privacy policy has a verified sentence about sharing data, it sits beside the list,
+ * so the shopper sees what the policy says and what the page does. No conclusion is drawn.
+ */
+function watchersSection(found: WatcherFinding[], report: Report | undefined): HTMLElement | null {
+  if (!found.length) return null;
+  const rec = found.filter((w) => w.kind === "session_replay").map((w) => w.vendor);
+  const ads = found.filter((w) => w.kind === "ad_pixel").map((w) => w.vendor);
+  const sharing = report?.flags.find((f) => f.category === "data_sharing" && f.quote);
+  return h(
+    "section",
+    { class: "watch", "aria-label": "Watching this checkout" },
+    h("h2", {}, "Watching this checkout"),
+    h(
+      "ul",
+      { class: "bullets" },
+      rec.length
+        ? h("li", {}, h("b", {}, rec.join(", ")), rec.length === 1 ? " records" : " record", " how you use this page: clicks, scrolling and, unless the site masks it, typing.")
+        : null,
+      ads.length
+        ? h("li", {}, h("b", {}, ads.join(", ")), ads.length === 1 ? " ad tracking gets" : " ad tracking get", " activity from this page, often including what you buy.")
+        : null,
+    ),
+    sharing?.quote
+      ? h(
+          "div",
+          { class: "says" },
+          h("p", { class: "muted" }, "What the privacy policy says:"),
+          h("blockquote", {}, sharing.quote),
+          sharing.policyUrl
+            ? h("p", { class: "from" }, h("a", { href: textFragmentUrl(sharing.policyUrl, sharing.quote), target: "_blank", rel: "noopener noreferrer" }, "See in policy"))
+            : null,
+        )
+      : null,
+    h("p", { class: "warn" }, "Spotted on your device from the scripts this page loads; nothing was sent. Xcavate doesn't block anything. A tracker blocker can."),
+  );
 }
 
 function localFees(fees: FeeSummary | undefined): HTMLElement | null {

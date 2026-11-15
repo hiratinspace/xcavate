@@ -177,6 +177,22 @@ describe("LOCAL_FINDINGS + GET_STATE", () => {
     expect(s.darkPatterns).toHaveLength(1);
   });
 
+  it("matches third-party addresses to watchers, replies, and stores them, with no network call", async () => {
+    const fetchImpl = vi.fn();
+    const h = createHandlers({ fetchImpl });
+    const reply = await h.handle(
+      { type: MSG.LOCAL_FINDINGS, thirdParty: ["edge.fullstory.com/s/fs.js", "cdn.shop-assets.example/app.js", "connect.facebook.net/en_US/fbevents.js"] },
+      sender,
+    );
+    const expected = [
+      { kind: "session_replay", vendor: "FullStory" },
+      { kind: "ad_pixel", vendor: "Meta" },
+    ];
+    expect(reply).toEqual({ ok: true, watchers: expected });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect((await h.getState(TAB)).watchers).toEqual(expected);
+  });
+
   it("GET_STATE includes the domain's report when the tab is ready", async () => {
     const report = await reportFor();
     const h = createHandlers({ fetchImpl: (async () => jsonResponse(report)) as unknown as typeof fetch });

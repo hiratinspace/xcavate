@@ -62,7 +62,13 @@ export const test = base.extend<{ page: Page }, { ext: Ext }>({
         channel: "chromium",
         headless: !headed,
         viewport: { width: 1280, height: 800 },
-        args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`, "--no-first-run"],
+        args: [
+          `--disable-extensions-except=${DIST}`,
+          `--load-extension=${DIST}`,
+          "--no-first-run",
+          // The Gadgetly fixture loads tracker scripts; keep every test request on this machine.
+          "--host-resolver-rules=MAP static.hotjar.com 127.0.0.1, MAP connect.facebook.net 127.0.0.1, MAP www.clarity.ms 127.0.0.1",
+        ],
       });
       let [sw] = context.serviceWorkers();
       if (!sw) sw = await context.waitForEvent("serviceworker", { timeout: 15_000 });
