@@ -11,7 +11,8 @@
     "dev:fixtures": "node fixtures/server.mjs",
     "dev:ext": "npm run dev -w @xcavate/extension",
     "eval": "npm run eval -w @xcavate/eval --",
-    "seed": "npm run seed -w @xcavate/server"
+    "seed": "npm run seed -w @xcavate/server",
+    "demo": "npm run build && node fixtures/demo/start.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

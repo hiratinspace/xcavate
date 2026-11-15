@@ -231,10 +231,30 @@ describe("server.mjs", () => {
   });
 
   it("lists stores on / and 404s unknown pages", async () => {
-    expect((await get(main, "/")).body).toContain("streamnest.localhost");
+    expect((await get(main, "/")).body).toContain("The demo room");
+    expect((await get(main, "/fixtures")).body).toContain("streamnest.localhost");
     expect((await get(main, "/nope", "fairbox.localhost")).status).toBe(404);
     expect((await get(main, "/../server", "fairbox.localhost")).status).toBe(404);
     expect((await get(main, "/fairbox/nope")).status).toBe(404);
+  });
+
+  it("serves only allowlisted demo assets with the correct types", async () => {
+    for (const [asset, type] of [["demo.js", "text/javascript"], ["demo.css", "text/css"], ["store.css", "text/css"]]) {
+      const response = await get(main, `/demo/${asset}`);
+      expect(response.status).toBe(200);
+      expect(response.headers["content-type"]).toContain(type);
+    }
+    for (const path of ["/demo/server.mjs", "/demo/%2e%2e/server.mjs", "/demo/constructor", "/demo/toString"]) {
+      expect((await get(main, path)).status).toBe(404);
+    }
+    expect((await get(main, "/gadgetly/checkout")).body).toContain('href="/demo/store.css"');
+  });
+
+  it("keeps unreadable and privacy-only coverage cases on separate origins", async () => {
+    expect((await get(main, "/checkout", "privacyonly.localhost")).body).toContain('href="/privacy"');
+    expect((await get(main, "/privacy", "privacyonly.localhost")).status).toBe(200);
+    expect((await get(main, "/terms", "unreadable.localhost")).status).toBe(404);
+    expect((await get(main, "/checkout", "unreadable.localhost")).body).toContain('href="/terms"');
   });
 
   it("serves SPA routes for ShopApp", async () => {

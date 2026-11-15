@@ -38,6 +38,12 @@ Xcavate never blocks, clicks or fills anything at checkout. A clean site gets a 
 | Focus | Rights and privacy in general | Things that cost you money |
 | Proof | Summary points | The exact quoted sentence, highlighted in the policy |
 
+## Judge demo room
+
+After `npm install`, run `npm run demo` and open **http://localhost:4000/**. This builds the extension and starts both local services in rules-only mock mode. The demo room has a seven-beat presentation, a timer, source quotes, live-store launchers and a 14-case rehearsal checklist. Starting the presentation restores StreamNest terms to v1 so the spoken price matches the policy. Ctrl+C stops both services.
+
+Load `extension/dist` once in Chrome. The demo room opens actual fixture stores in a separate tab; its expected-outcome labels and manually checked boxes are not extension results or accuracy claims. The original fixture directory remains at `/fixtures`. See [the local presenter guide](fixtures/demo/README.md).
+
 ## Quick start (about 10 minutes)
 
 **You need:** Node.js 22 or newer and Google Chrome 116 or newer. The server stores its cache with the built-in `node:sqlite` (Node 22.13+ or 23.4+); on older Node it falls back to an in-memory store saved to a JSON file, so everything still works.

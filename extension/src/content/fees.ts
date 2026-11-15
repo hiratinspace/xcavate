@@ -35,6 +35,7 @@ interface Row {
 }
 
 function rowOf(el: Element): Row | undefined {
+  if (el.closest('[hidden], [aria-hidden="true"]')) return undefined;
   const text = cleanText(el.textContent);
   if (!text || text.length > MAX_ROW_CHARS) return undefined;
   const amounts = parseAllAmounts(text);
@@ -56,7 +57,7 @@ export function findAmountRows(doc: Document): Row[] {
   // <dt>Label</dt><dd>$1.00</dd> pairs are siblings, so pair them up explicitly.
   for (const dt of Array.from(doc.querySelectorAll("dt"))) {
     const dd = dt.nextElementSibling;
-    if (!dd || dd.tagName !== "DD") continue;
+    if (!dd || dd.tagName !== "DD" || dt.closest('[hidden], [aria-hidden="true"]') || dd.closest('[hidden], [aria-hidden="true"]')) continue;
     const label = cleanText(dt.textContent);
     const amounts = parseAllAmounts(cleanText(dd.textContent));
     if (label && amounts.length === 1 && label.length <= 60)

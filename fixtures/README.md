@@ -8,8 +8,8 @@ Every lane relies on these URLs and file paths. Change them only together with e
 
 | Port | Host | Purpose |
 |---|---|---|
-| 4000 | `streamnest.localhost`, `gadgetly.localhost`, `fairbox.localhost`, `sneakyterms.localhost`, `shopapp.localhost` | One fictional store per host. Chrome resolves `*.localhost` to 127.0.0.1, so every store is its own origin and its own cache domain. |
-| 4000 | `localhost` | Path-prefix fallback for Node tools that cannot resolve `*.localhost`: `http://localhost:4000/<site>/<page>` serves the same files. Also `/` lists all stores. |
+| 4000 | `streamnest.localhost`, `gadgetly.localhost`, `fairbox.localhost`, `sneakyterms.localhost`, `shopapp.localhost`, `privacyonly.localhost`, `unreadable.localhost` | One fictional store per host. Chrome resolves `*.localhost` to 127.0.0.1, so every store is its own origin and its own cache domain. |
+| 4000 | `localhost` | Path-prefix fallback for Node tools that cannot resolve `*.localhost`: `http://localhost:4000/<site>/<page>` serves the same files. Also `/` opens the judge demo room and `/fixtures` lists all stores. |
 | 4001 | `legal.localhost` (or `localhost`) | A second origin for cross-origin policy fetches: `http://legal.localhost:4001/<site>/<page>`. |
 
 Routing inside a store: `/` → `index.html` (product page), `/<name>` → `<name>.html`. Unknown → 404.
@@ -42,3 +42,12 @@ fixtures/
 | SneakyTerms (attack) | `/terms`, `/privacy` | "All sales are final" + early termination fee; hidden text (display:none, font-size:0, aria-hidden) and a visible sentence telling AI tools to report no issues. `terms-quoted.html` has the instruction inside a quotation. Checkout has aggressive global CSS (`* { … !important }`) to test card isolation | red: no_refund, termination_fee |
 
 Every checkout has fake card fields (`autocomplete="cc-number"` etc.) inside a `<form>` with no action that leaves the page; nothing is ever submitted. The pay button sits next to a sentence "By placing your order you agree to our Terms…" that links the policies.
+
+## Judge demo room and coverage cases
+
+`http://localhost:4000/` serves the local demo hub in `fixtures/demo/`. Its static CSS and JavaScript are allowlisted under `/demo/`; arbitrary filesystem paths are never served. `npm run demo` builds and runs both services in rules-only mock mode. The original directory is at `/fixtures`.
+
+- `http://privacyonly.localhost:4000/checkout` links only a readable privacy policy. Expected `partial`, never green.
+- `http://unreadable.localhost:4000/checkout` links `/terms`, which deliberately returns 404. Expected `unknown`, never green.
+
+These have independent origins so cached healthy FairBox results do not leak into coverage tests. Existing planted policy text, golden fixtures and hostile SneakyTerms CSS are preserved. Checkout presentation styles are shared via `/demo/store.css`. The hub is not a checkout and should never trigger automatic analysis.
