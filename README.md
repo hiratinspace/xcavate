@@ -24,6 +24,18 @@ The terms checker that can't make up a warning: every warning it shows quotes th
 
 ---
 
+## Before you click, share or pay
+
+Think about someone you care about: your grandma, your parents, or yourself. When browsing online, would they spot a fake website, notice a hidden fee, catch a free trial turning into a paid subscription, or understand what they are agreeing to share?
+
+The risks are not always obvious. Sometimes it is a scam. Sometimes it is a preselected extra, a buried refund restriction, a difficult cancellation process, or permission to use your personal data.
+
+The scale is real. In 2025, the FBI recorded **$215.8 million in reported phishing and spoofing losses**, and **$503.4 million in non-payment/non-delivery losses** (a category covering buyers not receiving purchases and sellers not receiving payment). Separately, a 2024 global privacy sweep found deceptive design that could influence people to share more personal information in **97% of more than 1,000 websites and apps reviewed**. That percentage describes the reviewed sample, not every website. Sources: [FBI IC3, pages 7–8](https://www.ic3.gov/AnnualReport/Reports/2025_IC3Report.pdf), [GPEN privacy sweep](https://www.priv.gc.ca/en/opc-news/news-and-announcements/2024/nr-c_240709/).
+
+We are building **Xcavate as an everyday companion for browsing, sharing and spending online**. Today's demo brings hidden fees, subscription commitments, privacy and data-sharing terms, refund restrictions, reminders and cancellation guidance into a clearer picture, with exact policy quotes behind policy warnings and local checks for checkout extras. Site-reputation checks and phishing warnings are part of the intended companion and are still being built; they are not demonstrated by this version. Privacy findings appear in the full report, while the checkout verdict focuses on money risks.
+
+Whether you are buying something, starting a trial or sharing information, you deserve to understand the choice before making it. Start with the [judge demo room](#judge-demo-room), then explore the implementation below. The external figures describe the problem's scale, not measured losses prevented by Xcavate.
+
 ## What it does
 
 When you land on a checkout, sign-up or pricing page, Xcavate finds the site's terms, refund, subscription and privacy pages, reads them, and puts a small card in the corner of the page with a verdict and up to three warnings about things that can cost you money.
