@@ -25,3 +25,6 @@ coverage/
 # saved third-party policy texts (copyrighted, local eval only)
 eval/real/
 eval/results.md
+# Playwright e2e output
+test-results/
+playwright-report/

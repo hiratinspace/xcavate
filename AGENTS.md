@@ -42,6 +42,7 @@ The verdict is always computed in code, never by the model. The model only propo
 | `extension/src` | `content/` (classifier, policyFinder, extractor, collect, fees, darkPatterns, spa, card), `background/` (handlers, state, api, badge), `lib/` (netguard SSRF guard, fetchCapped, actions for calendar/.ics/mailto, money parsing), `popup/`. `build.mjs` bundles to `extension/dist`. |
 | `fixtures/` | Five fictional stores on `*.localhost:4000` plus a cross-origin legal host on `:4001`, `golden.json` (expected verdicts and forbidden categories), `load.ts` test helper. Hosts, routes and planted clauses: `fixtures/README.md`. |
 | `extension/SMOKE_TEST.md` | Manual end-to-end checklist over the fixture stores (V-04). |
+| `e2e/` | Playwright specs that load `extension/dist` in real Chromium against the fixture stores and the mock backend behind a request-counting proxy (V-04). `npm run e2e`; needs ports 4000, 4001, 8787, 8788 free; screenshots go to `test-results/screens/` (git-ignored). Not part of `npm test`. |
 | `docs/` | Planning and pitch material (temporary on GitHub): `plan/` (direction v2), `pitch/` (pitch, submission text, demo script), `research/` (real-site notes, outside critique). `BUILD_PLAN.md` at the root is the original spec referenced by section numbers in code comments. |
 | `eval/run.ts` | Accuracy script: per-category precision/recall, verdict accuracy, latency. Real-world texts live in `eval/real/` (git-ignored, copyrighted). |
 
@@ -68,6 +69,7 @@ npm run build             # builds shared check, server typecheck, extension/dis
 npm run seed              # optional: instant cached results for the fixture stores
 npm test                  # all vitest projects (shared, server, extension, fixtures)
 npm run eval              # accuracy report -> eval/results.md (local only)
+npm run e2e               # real Chromium + extension over the fixture stores (stop dev servers first)
 ```
 
 Real model: create `server/.env` (git-ignored) with `LLM_PROVIDER=anthropic`, `LLM_API_KEY=...`, optional `LLM_MODEL` (default `claude-haiku-5-5`). See `server/.env.example` for every setting (`PUBLISH_CLIENT_REPORTS`, `TRUST_PROXY`, `STORE`, `RATE_LIMIT_PER_MIN`, ...).
@@ -112,14 +114,13 @@ The loop every change went through:
 
 **Measured so far (offline mock mode, rules only, no real model):** fixtures 5/5 verdicts. 10 real policies: 7/10 verdicts, precision 84%, recall 80%. Caveats: real-world labels were drafted by an AI agent and not yet human-reviewed, and the rules were tuned while looking at those texts, so these are not held-out numbers. **The real model has not been measured yet.**
 
-**Direction v2 (merged):** recalibrated verdict (V-01: plain renewals with online cancel are low, red needs harsh terms; arbitration and data sharing never drive the verdict), grey "Partly read" state instead of false green (V-02), honest mock + `npm run eval -- --compare` (V-03 code), trial card headline with charge date, Remind me and a quoted line (V-05), card fires on pricing pages (V-07), California rights note on phone-only cancellation (V-08, wording pending owner review), Shopify fallback paths (V-10), domain-only `pageUrl` (V-11), snapshot retention that refuses new versions at the per-URL cap, hardened netguard, on-device rules verdict that the backend report upgrades plus an "AI check" setting that sends nothing when off (V-06, parity-tested against the server). Professional README with screenshots in `.github/assets/`. About 577 tests.
+**Direction v2 (merged):** recalibrated verdict (V-01: plain renewals with online cancel are low, red needs harsh terms; arbitration and data sharing never drive the verdict), grey "Partly read" state instead of false green (V-02), honest mock + `npm run eval -- --compare` (V-03 code), trial card headline with charge date, Remind me and a quoted line (V-05), card fires on pricing pages (V-07), California rights note on phone-only cancellation (V-08, wording pending owner review), Shopify fallback paths (V-10), domain-only `pageUrl` (V-11), snapshot retention that refuses new versions at the per-URL cap, hardened netguard, on-device rules verdict that the backend report upgrades plus an "AI check" setting that sends nothing when off (V-06, parity-tested against the server). Professional README with screenshots in `.github/assets/`. Real-browser e2e (V-04): 9 Playwright specs pass in headless Chromium with the extension loaded; it found and fixed a stale "ticked for you" card row. About 578 unit tests.
 
 **Open, good places to contribute:**
 
 | ID | What | Notes |
 |---|---|---|
 | V-03 | Run the real model, report rules-only vs rules + Claude side by side, median latency | Needs an API key in `server/.env` |
-| V-04 | Real-browser smoke pass in a fresh Chrome profile over the four fixture stores; automate with Playwright + Chromium `--load-extension` | No agent has loaded the extension in a real browser yet: highest-value check |
 | - | Human review of the real-world labels (`eval/real/labels.json`, local only; ask the owner for the files) | Needed before any accuracy number is quoted |
 | V-09 | Deploy the backend and ship a packed `.zip` | Deferred by the owner until the tool works end to end |
 | V-12 | Pitch rewrite around proof + action; honest comparison with TermAlert, AgreeGuard and Gemini | After V-03 numbers exist |

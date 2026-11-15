@@ -12,7 +12,7 @@ The terms checker that can't make up a warning: every warning it shows quotes th
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3C5058?logo=typescript&logoColor=white)
 ![Node 22+](https://img.shields.io/badge/Node-22%2B-8A6A52?logo=nodedotjs&logoColor=white)
 ![Claude Haiku 5.5](https://img.shields.io/badge/model-Claude%20Haiku%205.5-B48E6B)
-![Tests](https://img.shields.io/badge/tests-577%20passing-5B7B5A)
+![Tests](https://img.shields.io/badge/tests-578%20unit%20%2B%209%20e2e-5B7B5A)
 ![Privacy](https://img.shields.io/badge/form%20data-never%20read-1E2B30)
 
 [What it does](#what-it-does) · [See it](#see-it) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Privacy](#privacy-and-security) · [Contributing](#contributing)
@@ -246,6 +246,7 @@ AGENTS.md             architecture, rules and status for contributors (start her
 | `npm run build` | Builds shared, server and the extension (`extension/dist`) |
 | `npm run dev:ext` | Rebuilds the extension on change |
 | `npm test` | Runs every unit and integration test (vitest, no network, no API key) |
+| `npm run e2e` | Loads the built extension in real Chromium and checks every demo store end to end (Playwright) |
 | `npm run typecheck` | Type-checks every package |
 | `npm run seed` | Pre-analyses every demo store into the local cache |
 | `npm run eval` | Precision and recall per category, verdict accuracy, latency |
