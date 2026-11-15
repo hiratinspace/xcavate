@@ -1,0 +1,25 @@
+node_modules
+dist
+.env
+data/
+*.log
+.DS_Store
+# local planning docs and notes (not published)
+BUILD_PLAN.md
+docs/
+*.doc
+*.docx
+*.pdf
+# env and secrets
+.env.*
+!.env.example
+*.pem
+*.key
+# local tooling
+.claude/
+graphify-out/
+.vscode/
+.idea/
+coverage/
+*.db
+*.sqlite

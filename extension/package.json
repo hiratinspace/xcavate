@@ -1,0 +1,9 @@
+{
+  "name": "@xcavate/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "node build.mjs", "dev": "node build.mjs --watch" },
+  "dependencies": { "@xcavate/shared": "*" },
+  "devDependencies": { "esbuild": "^0.24.0", "@types/chrome": "^0.0.287" }
+}

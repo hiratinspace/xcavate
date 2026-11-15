@@ -1,0 +1,23 @@
+{
+  "name": "xcavate",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/shared", "server", "extension", "eval"],
+  "scripts": {
+    "build": "npm run build -w @xcavate/shared && npm run build -w @xcavate/server && npm run build -w @xcavate/extension",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/shared && tsc -p server --noEmit && tsc -p extension --noEmit",
+    "dev:server": "npm run dev -w @xcavate/server",
+    "dev:fixtures": "node fixtures/server.mjs",
+    "dev:ext": "npm run dev -w @xcavate/extension",
+    "eval": "npm run eval -w @xcavate/eval",
+    "seed": "npm run seed -w @xcavate/server"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "jsdom": "^25.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0"
+  }
+}
