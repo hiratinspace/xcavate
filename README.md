@@ -61,7 +61,7 @@ Fee and add-on checks run inside the page. Form contents are never read. The ext
 | **Your rights note** | Phone-only cancellation for a subscription you can start online gets a short, sourced note about California law, worded as information. |
 | **Instant on-device verdict** | The rules engine runs in the extension, so a verdict appears at once. The AI check upgrades it when the backend answers, and can be turned off entirely. |
 | **Honest uncertainty** | If the terms or refund policy couldn't be read, or the pages read say nothing about billing or refunds, the verdict is **Partly read**, never a false green. If the AI check didn't run, the popup says so. |
-| **AI as a checker, not an oracle** | Claude reviews each rules finding and can keep, soften or drop it, but only with a verified quote from the same clause. Firm traps (all sales final, early termination fees) can't be erased. |
+| **AI as a checker, not an oracle** | Claude reviews each rules finding and can soften a misread one by one level, but only with a verified quote from the same clause. It can never erase a rules finding, and on a site whose terms try to instruct AI tools it can't soften anything. |
 | **Stays out of the way** | The card opens compact (verdict and one line, about 110 px tall), expands on demand, and can be moved to the other corner. |
 
 ## See it

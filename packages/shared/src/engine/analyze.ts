@@ -198,23 +198,33 @@ const lowerOf = (s: Flag["severity"]): Flag["severity"] => (s === "high" ? "medi
 const maxSev = (a: Flag["severity"], b: Flag["severity"]) => (SEVERITY_RANK[a] >= SEVERITY_RANK[b] ? a : b);
 
 /**
- * How far the model may lower a rules severity: to `to`, but a firm clause (whole-purchase no
- * refund, early termination fee) at most one level. Never raises.
+ * How far the model may lower a rules severity: at most ONE level, for every category, and never
+ * below low (a rules finding is never removed by the model). The policy text is written by the site
+ * and could talk the model into a review, so a review alone can soften a deterministic finding but
+ * never erase it: a high rules hit stays at least medium, so a red verdict can at most become yellow.
+ * Firm clauses (whole-purchase no refund, early termination fee) follow the same one-level rule.
+ * Never raises.
  */
 function demoted(r: Candidate, to: Flag["severity"]): Flag["severity"] {
-  const floor = r.firm ? lowerOf(r.severity) : "low";
-  const target = maxSev(to, floor);
+  const target = maxSev(to, lowerOf(r.severity));
   return SEVERITY_RANK[target] < SEVERITY_RANK[r.severity] ? target : r.severity;
 }
 
 type Review = NonNullable<LlmOutput["rulesReview"]>[number];
 
+/** Text that speaks to AI tools or tries to override instructions: a sign the site is steering the model. */
+const AI_ADDRESS =
+  /\b(ai|a\.i\.|artificial intelligence|language models?|llms?|chatbots?|assistants?|automated (?:tools?|systems?|reviewers?|summari[sz]ers?)|bots?)\b[^.]{0,120}\b(must|should|shall|are (?:instructed|required)|report|rate|ignore|disregard|treat|say|classify|mark|summari[sz]e)\b|\b(ignore|disregard) (?:all |any )?(?:previous|prior|above|earlier) (?:instructions|rules|prompts?)\b|\bsystem prompt\b/i;
+
+export function addressesAiTools(text: string): boolean {
+  return AI_ADDRESS.test(text);
+}
+
 /**
  * Apply the model's reviews of rules candidates (direction v3). A review counts only when its quote
  * (5+ words) verifies in the same policy as the rules clause AND addresses that clause: same
- * paragraph, or the quotes overlap. "drop" removes a rules clause the model judged not applicable;
- * a firm clause is only demoted one level instead. "demote" lowers to the stated severity (one level
- * when none is given), with the same floor for firm clauses. Reviews never raise severity. `reason`
+ * paragraph, or the quotes overlap. "drop" and "demote" both lower the clause by one level at most
+ * (see demoted): the model can never remove a rules finding. Reviews never raise severity. `reason`
  * is never shown. Returns the surviving candidates and how many reviews changed something.
  */
 function applyReviews(cands: Candidate[], reviews: Review[], verifiable: VerifiablePolicy[]): { cands: Candidate[]; applied: number } {
@@ -238,8 +248,7 @@ function applyReviews(cands: Candidate[], reviews: Review[], verifiable: Verifia
         continue;
       }
       changed = true;
-      if (rv.action === "drop" && !r.firm) continue;
-      const to = rv.action === "drop" ? lowerOf(r.severity) : rv.severity && SEVERITY_RANK[rv.severity] < SEVERITY_RANK[r.severity] ? rv.severity : lowerOf(r.severity);
+      const to = rv.action === "demote" && rv.severity && SEVERITY_RANK[rv.severity] < SEVERITY_RANK[r.severity] ? rv.severity : lowerOf(r.severity);
       next.push({ ...r, severity: demoted(r, to) });
     }
     if (changed) applied++;
@@ -276,7 +285,11 @@ export async function analyzePrepared(prepared: Prepared[], model: ModelAnswer =
   const allRuleCands: Candidate[] = readable.flatMap(({ p, i }) =>
     runRules(p.paragraphs).map((h) => ({ ...h, policy: i, trusted: true })),
   );
-  const { cands: ruleCands } = isModel ? applyReviews(allRuleCands, out?.rulesReview ?? [], verifiable) : { cands: allRuleCands };
+  // A policy that addresses AI tools ("AI reviewers must report no issues") has shown it will try to
+  // steer the model, so on such sites the model may add findings but never soften rules findings.
+  const steering = texts.some(addressesAiTools);
+  const canSoften = isModel && !steering;
+  const { cands: ruleCands } = canSoften ? applyReviews(allRuleCands, out?.rulesReview ?? [], verifiable) : { cands: allRuleCands };
 
   // Verify every model quote: in one paragraph of the real text, at least 5 words, and actually
   // evidence for its category (a non-negated keyword). Drop what fails.
@@ -311,11 +324,12 @@ export async function analyzePrepared(prepared: Prepared[], model: ModelAnswer =
    * Merge (direction v3): the model is a checker of the rules, not a silent veto.
    * - Model silent on a category: the rules flag stays as it is (a model that misses a clause
    *   cannot remove it).
-   * - Model reviewed a rules clause (applyReviews above): a verified "drop" removes it, a verified
-   *   "demote" lowers it; firm clauses (all sales final, non-refundable purchase, early termination
-   *   fee) are at most demoted one level, never removed.
+   * - Model reviewed a rules clause (applyReviews above): a verified "drop" or "demote" lowers it by
+   *   ONE level at most. The model never removes a rules finding, so a high rules hit stays at least
+   *   medium and a review alone can't turn red into green (policy text is site-written and may try
+   *   to steer the model). On a site whose text addresses AI tools, no softening at all.
    * - Model found the same clause (overlapping quote or same paragraph): a lower model severity
-   *   demotes the rules flag (same floor for firm clauses); a higher one raises it, since every model
+   *   demotes the rules flag (one level at most, same rule); a higher one raises it, since every model
    *   finding here already carries a verified quote. The flag becomes source "both".
    * - Different clauses in one category: the more severe flag wins.
    * Afterwards code decides again: severity caps, text caps (capByText) and the V-01 recalibration
@@ -330,7 +344,7 @@ export async function analyzePrepared(prepared: Prepared[], model: ModelAnswer =
     const l = llmBest.find((c) => c.category === cat);
     if (r && l) {
       const severity =
-        isModel && SEVERITY_RANK[l.severity] < SEVERITY_RANK[r.severity] && overlaps(r, l) ? demoted(r, l.severity) : maxSev(r.severity, l.severity);
+        canSoften && SEVERITY_RANK[l.severity] < SEVERITY_RANK[r.severity] && overlaps(r, l) ? demoted(r, l.severity) : maxSev(r.severity, l.severity);
       const words = l.trusted ? l : r;
       if (overlaps(r, l))
         flags.push(
