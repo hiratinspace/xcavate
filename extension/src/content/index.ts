@@ -49,6 +49,8 @@ export function startContent(win: Window = window): void {
   const policyCache = new Map<string, FetchedPage | undefined>();
   /** Page URL whose policies were analysed; a re-run on the same URL (form count changed) skips that work. */
   let analyzedFor = "";
+  let localChecksActive = false;
+  let localRefreshPending = false;
 
   const clearMarkers = () => {
     markers?.destroy();
@@ -79,6 +81,7 @@ export function startContent(win: Window = window): void {
     const reply = await send<PageReadyReply>({ type: MSG.PAGE_READY, pageType: cls.pageType, score: cls.score, url: stripPageUrl(url) });
     if (my !== gen) return;
     if (!reply || reply.paused || cls.pageType === "none") {
+      localChecksActive = false;
       card.hide();
       clearMarkers();
       return;
@@ -88,6 +91,7 @@ export function startContent(win: Window = window): void {
       if (reply.report) card.showReport(reply.report);
       else card.showChecking(domainOf(url));
     }
+    localChecksActive = true;
     runLocalChecks();
     const pageKey = stripPageUrl(url);
     if (analyzedFor === pageKey && reply.report) return; // same page, already analysed: local checks were enough
@@ -157,6 +161,19 @@ export function startContent(win: Window = window): void {
         return false;
     }
     return false;
+  });
+
+  // Re-read visible summary text after the shop has handled the shopper's choice.
+  // No policy scan or backend request is needed when a checkbox or radio changes.
+  doc.addEventListener("change", (event) => {
+    const target = event.target as Element | null;
+    if (!localChecksActive || localRefreshPending || !target?.matches?.('input[type="checkbox"], input[type="radio"]')) return;
+    localRefreshPending = true;
+    const generation = gen;
+    void waitForDomQuiet(doc, 150, 800).then(() => {
+      localRefreshPending = false;
+      if (localChecksActive && generation === gen) runLocalChecks();
+    });
   });
 
   const safeRun = () =>

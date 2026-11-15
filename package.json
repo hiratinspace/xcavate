@@ -17,6 +17,7 @@
     "dev:ext": "npm run dev -w @xcavate/extension",
     "eval": "npm run eval -w @xcavate/eval --",
     "seed": "npm run seed -w @xcavate/server",
+    "demo": "npm run build && node fixtures/demo/start.mjs",
     "e2e": "npm run build -w @xcavate/shared && npm run build -w @xcavate/extension && playwright test -c e2e/playwright.config.ts"
   },
   "devDependencies": {

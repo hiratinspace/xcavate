@@ -93,6 +93,37 @@ describe("content orchestrator (D-06)", () => {
     expect((document.getElementById("protection") as HTMLInputElement).checked).toBe(true);
   });
 
+  it("refreshes local findings after extras are removed without another policy scan", async () => {
+    const { sent } = setup("gadgetly");
+    startContent(window);
+    await vi.waitFor(() => expect(analyzeOf(sent)).toBeDefined());
+    const count = sent.filter((m) => m.type === "ANALYZE").length;
+    const protection = document.getElementById("protection") as HTMLInputElement;
+    protection.checked = false;
+    // A shop can render its new summary after the control event has bubbled.
+    setTimeout(() => {
+      document.getElementById("protection-row")!.hidden = true;
+      document.getElementById("total")!.textContent = "$151.26";
+    }, 20);
+    protection.dispatchEvent(new Event("change", { bubbles: true }));
+    const subscription = document.getElementById("tips-subscribe") as HTMLInputElement;
+    const once = document.getElementById("tips-once") as HTMLInputElement;
+    subscription.checked = false;
+    once.checked = true;
+    once.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => {
+      const local = sent.filter((m) => m.type === "LOCAL_FINDINGS").at(-1) as Extract<Message, { type: "LOCAL_FINDINGS" }>;
+      expect(local.fees?.extrasTotal).toBe(4.95);
+    });
+    const latest = sent.filter((m) => m.type === "LOCAL_FINDINGS").at(-1) as Extract<Message, { type: "LOCAL_FINDINGS" }>;
+    expect(latest.darkPatterns).toEqual([]);
+    expect(latest.fees?.extrasTotal).toBe(4.95);
+    expect(latest.fees?.lines.some((l) => l.label === "Protection plan")).toBe(false);
+    expect(sent.filter((m) => m.type === "ANALYZE")).toHaveLength(count);
+    expect(protection.checked).toBe(false);
+    expect(once.checked).toBe(true);
+  });
+
   it("backend error → card removed silently, page untouched", async () => {
     const { sent } = setup("fairbox", { ANALYZE: () => ({ ok: false, error: "backend 500" }) });
     const before = document.body.innerHTML;

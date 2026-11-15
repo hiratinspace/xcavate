@@ -25,6 +25,9 @@ coverage/
 # saved third-party policy texts (copyrighted, local eval only)
 eval/real/
 eval/results.md
+
+# Local browser QA screenshots and downloaded evidence
+.demo-evidence/
 # Playwright e2e output
 test-results/
 playwright-report/
