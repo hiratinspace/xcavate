@@ -24,6 +24,8 @@ const STORES = {
   fairbox: "FairBox: clean control store (should be green)",
   sneakyterms: "SneakyTerms: prompt-injection attack store",
   shopapp: "ShopApp: single-page app, checkout via history.pushState",
+  privacyonly: "PrivacyOnly: readable privacy page without a money policy",
+  unreadable: "Unreadable: linked terms return 404",
 };
 /** Plain articles (classifier negatives) are served as a pseudo-site called "pages". */
 const ALL_SITES = [...Object.keys(STORES), "pages"];
@@ -43,7 +45,7 @@ async function loadPage(site, rawName) {
   if (!PAGE_RE.test(name)) return null;
   if (VERSIONED[site]?.includes(name) && state[site] === 2) name = `${name}.v2`;
   try {
-    return await readFile(join(siteDir(site), `${name}.html`), "utf8");
+    return (await readFile(join(siteDir(site), `${name}.html`), "utf8")).replaceAll("http://localhost:4000/\">← Xcavate demo room", `http://localhost:${ports.main}/\">← Xcavate demo room`);
   } catch {
     // ShopApp is an SPA: a reload on /checkout (or any unknown route) serves the app shell.
     if (site === "shopapp") {
@@ -59,7 +61,7 @@ async function loadPage(site, rawName) {
 
 /** In path-prefix mode, root-relative links ("/terms") must point inside "/<site>/". */
 function rewriteForPrefix(html, site) {
-  return html.replace(/\b(href|src|action)="\/(?!\/)/g, `$1="/${site}/`);
+  return html.replace(/\b(href|src|action)="\/(?!\/|demo\/)/g, `$1="/${site}/`);
 }
 
 function send(res, status, body, type = "text/html; charset=utf-8", extra = {}) {
@@ -85,8 +87,8 @@ function indexPage() {
   const l = ports.legal;
   const rows = Object.entries(STORES)
     .map(
-      ([id, desc]) => `<li><strong><a href="http://${id}.localhost:${m}/">${id}.localhost:${m}</a></strong>: ${escapeHtml(desc)}
-  <br><a href="http://${id}.localhost:${m}/checkout">checkout</a> · path-prefix: <a href="/${id}/">/${id}/</a> · <a href="/${id}/checkout">/${id}/checkout</a></li>`,
+      ([id, desc]) => `<li><strong><a href="http://${id}.localhost:${m}/${["privacyonly", "unreadable"].includes(id) ? "checkout" : ""}">${id}.localhost:${m}</a></strong>: ${escapeHtml(desc)}
+  <br><a href="http://${id}.localhost:${m}/checkout">checkout</a> · path-prefix: <a href="/${id}/${["privacyonly", "unreadable"].includes(id) ? "checkout" : ""}">/${id}/</a> · <a href="/${id}/checkout">/${id}/checkout</a></li>`,
     )
     .join("\n");
   return `<!DOCTYPE html>
@@ -115,6 +117,19 @@ ${rows}
 <h2>Policy version toggle</h2>
 <p>StreamNest is on <strong>v${state.streamnest}</strong>. <a href="/__set?site=streamnest&amp;v=2">Switch to v2</a> · <a href="/__set?site=streamnest&amp;v=1">Switch to v1</a> · <a href="/__state">/__state</a></p>
 </body></html>`;
+}
+
+const DEMO_ASSETS = { "demo.css": "text/css; charset=utf-8", "demo.js": "text/javascript; charset=utf-8", "store.css": "text/css; charset=utf-8" };
+
+async function demoPage() {
+  const html = await readFile(join(ROOT, "demo", "index.html"), "utf8");
+  return html.replace("</head>", `<meta name="legal-port" content="${ports.legal}"></head>`);
+}
+
+async function serveDemoAsset(url, res) {
+  const name = url.pathname.slice("/demo/".length);
+  if (!Object.hasOwn(DEMO_ASSETS, name)) return notFound(res, url.pathname);
+  send(res, 200, await readFile(join(ROOT, "demo", name), "utf8"), DEMO_ASSETS[name]);
 }
 
 function handleControl(url, res) {
@@ -158,6 +173,7 @@ function hostName(req) {
 async function handleMain(req, res) {
   const url = new URL(req.url, "http://x");
   if (handleControl(url, res)) return;
+  if (url.pathname.startsWith("/demo/")) return serveDemoAsset(url, res);
   const host = hostName(req);
   const sub = host.endsWith(".localhost") ? host.slice(0, -".localhost".length) : null;
   if (sub && ALL_SITES.includes(sub)) {
@@ -165,7 +181,8 @@ async function handleMain(req, res) {
     if (html == null) return notFound(res, host + url.pathname);
     return send(res, 200, html);
   }
-  if (url.pathname === "/") return send(res, 200, indexPage());
+  if (url.pathname === "/") return send(res, 200, await demoPage());
+  if (url.pathname === "/fixtures") return send(res, 200, indexPage());
   return servePrefixed(url, res);
 }
 

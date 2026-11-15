@@ -55,6 +55,8 @@ export function startContent(win: Window = window): void {
   let analyzedFor = "";
   /** Page (origin + path) this script's card is showing checking or a verdict for; "" when none. */
   let activePage = "";
+  let localChecksActive = false;
+  let localRefreshPending = false;
 
   const clearMarkers = () => {
     markers?.destroy();
@@ -124,6 +126,7 @@ export function startContent(win: Window = window): void {
     const reply = await send<PageReadyReply>({ type: MSG.PAGE_READY, pageType: cls.pageType, score: cls.score, url: pageKey });
     if (my !== gen) return;
     if (!reply || reply.paused || cls.pageType === "none") {
+      localChecksActive = false;
       hideCard();
       clearMarkers();
       // A hydrated app may render its checkout or pricing table later: re-classify (bounded, read-only).
@@ -143,6 +146,7 @@ export function startContent(win: Window = window): void {
       if (reply.report) card.showReport(reply.report);
       else card.showChecking(domainOf(url));
     }
+    localChecksActive = true;
     runLocalChecks();
     if (analyzedFor === pageKey && reply.report) return; // same page, already analysed: local checks were enough
 
@@ -223,6 +227,19 @@ export function startContent(win: Window = window): void {
         return false;
     }
     return false;
+  });
+
+  // Re-read visible summary text after the shop has handled the shopper's choice.
+  // No policy scan or backend request is needed when a checkbox or radio changes.
+  doc.addEventListener("change", (event) => {
+    const target = event.target as Element | null;
+    if (!localChecksActive || localRefreshPending || !target?.matches?.('input[type="checkbox"], input[type="radio"]')) return;
+    localRefreshPending = true;
+    const generation = gen;
+    void waitForDomQuiet(doc, 150, 800).then(() => {
+      localRefreshPending = false;
+      if (localChecksActive && generation === gen) runLocalChecks();
+    });
   });
 
   const safeRun = () =>
