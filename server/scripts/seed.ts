@@ -25,7 +25,7 @@ const order = [STREAMNEST_V2, ...FIXTURE_CASES.filter((c) => c.id !== "sneakyter
 const rows: string[] = [];
 for (const c of order) {
   const req = buildRequest(c);
-  const report = await runAnalysis(req, { store, llm });
+  const report = await runAnalysis(req, { store, llm, publishShared: true });
   rows.push(
     [c.id.padEnd(14), domainOf(req.pageUrl).padEnd(28), report.verdict.padEnd(7), (report.cached ? "cached" : "fresh").padEnd(7), report.flags.map((f) => f.category).join(",")].join(" "),
   );

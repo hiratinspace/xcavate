@@ -38,9 +38,13 @@ and "cancellation" (method: online, email, phone, mail or unknown; up to 4 short
 notice period in days; contact email, phone or URL as written; quote) when the text states them; otherwise null.
 If nothing fits, return an empty findings list. Do not pad.`;
 
-/** Keep paragraph text from closing our own wrapper tags. */
-function sanitize(text: string): string {
-  return text.replace(/<\s*\/?\s*policy\b/gi, "&lt;policy");
+/**
+ * Keep untrusted text from opening or closing any of our wrapper tags (policy, removed, added, ...).
+ * Every "<" is escaped. A quote the model copies from escaped text will not match the source and is
+ * dropped by verification, which fails safe.
+ */
+export function sanitize(text: string): string {
+  return text.replace(/</g, "&lt;");
 }
 
 function attr(s: string): string {

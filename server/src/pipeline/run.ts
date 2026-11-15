@@ -30,6 +30,12 @@ export interface PipelineDeps {
   store: Store;
   llm: LlmClient;
   now?: () => Date;
+  /**
+   * Publish this report as the shared latest report for its domain (GET /v1/report).
+   * Only trusted callers (the seed script) set this. Client-submitted text is unverified, so letting
+   * anonymous POSTs write the shared per-domain report would let anyone poison it for every visitor.
+   */
+  publishShared?: boolean;
 }
 
 interface Prepared {
@@ -92,7 +98,7 @@ export async function runAnalysis(req: AnalyzeRequest, deps: PipelineDeps): Prom
   };
 
   // Latest report per domain for GET /v1/report; changes are per-visitor, so they are not stored.
-  if (analyzedCount > 0) {
+  if (deps.publishShared && analyzedCount > 0) {
     const { changes: _ch, ...shared } = report;
     store.putLatestReport(domain, { ...shared, cached: false });
   }

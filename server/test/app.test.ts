@@ -10,8 +10,8 @@ import { MockLlm } from "../src/llm/mock.js";
 import { openStore } from "../src/store/index.js";
 import { FakeLlm, memStore, policyText, request as analyzeReq } from "./helpers.js";
 
-const app = (opts: { rate?: number; llm?: MockLlm | FakeLlm; store?: ReturnType<typeof memStore> } = {}) =>
-  createApp({ store: opts.store ?? memStore(), llm: opts.llm ?? new MockLlm(), config: { rateLimitPerMin: opts.rate ?? 1000 } });
+const app = (opts: { rate?: number; publish?: boolean; llm?: MockLlm | FakeLlm; store?: ReturnType<typeof memStore> } = {}) =>
+  createApp({ store: opts.store ?? memStore(), llm: opts.llm ?? new MockLlm(), config: { rateLimitPerMin: opts.rate ?? 1000, publishClientReports: opts.publish ?? true } });
 
 const VALID = analyzeReq(policyText("All sales are final and no refunds will be given for any reason."));
 
@@ -131,16 +131,24 @@ describe("persistence across restarts", () => {
     const path = join(dir, mode + ".db");
     const s1 = openStore(path, mode);
     expect(s1.kind).toBe(mode);
-    await request(createApp({ store: s1, llm: new MockLlm(), config: { rateLimitPerMin: 100 } })).post("/v1/analyze").send(VALID);
+    await request(createApp({ store: s1, llm: new MockLlm(), config: { rateLimitPerMin: 100, publishClientReports: true } })).post("/v1/analyze").send(VALID);
     s1.close();
 
     const s2 = openStore(path, mode);
     const llm = new FakeLlm();
-    const a = createApp({ store: s2, llm, config: { rateLimitPerMin: 100 } });
+    const a = createApp({ store: s2, llm, config: { rateLimitPerMin: 100, publishClientReports: true } });
     const res = await request(a).post("/v1/analyze").send(VALID);
     expect(res.body.cached).toBe(true);
     expect(llm.calls).toBe(0);
     expect((await request(a).get("/v1/report?domain=shop.example.com")).status).toBe(200);
     s2.close();
+  });
+});
+
+describe("shared report publishing (security)", () => {
+  it("by default a client POST does not fill GET /v1/report", async () => {
+    const a = app({ publish: false });
+    await request(a).post("/v1/analyze").send(VALID).expect(200);
+    await request(a).get("/v1/report?domain=" + new URL(VALID.pageUrl).hostname).expect(404);
   });
 });

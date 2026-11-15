@@ -13,7 +13,7 @@ import type { Store } from "./store/store.js";
 export interface AppDeps {
   store: Store;
   llm: LlmClient;
-  config: Pick<Config, "rateLimitPerMin">;
+  config: Pick<Config, "rateLimitPerMin"> & Partial<Pick<Config, "publishClientReports">>;
 }
 
 /** Express app factory (S-04). Used by src/index.ts and by tests with supertest. */
@@ -24,7 +24,7 @@ export function createApp({ store, llm, config }: AppDeps): express.Express {
   app.use(healthRouter(llm));
   app.use("/v1/analyze", rateLimit(config.rateLimitPerMin));
   app.use(express.json({ limit: LIMITS.maxBodyBytes }));
-  app.use(analyzeRouter({ store, llm }));
+  app.use(analyzeRouter({ store, llm, publishShared: config.publishClientReports === true }));
   app.use(reportRouter(store));
 
   app.use((_req: Request, res: Response) => {

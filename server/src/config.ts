@@ -9,6 +9,8 @@ export interface Config {
   dbPath: string;
   rateLimitPerMin: number;
   store: "auto" | "sqlite" | "memory";
+  /** Let client POSTs write the shared per-domain report. Off by default: client text is unverified. */
+  publishClientReports: boolean;
 }
 
 export const DEFAULT_MODEL = "claude-haiku-5-5";
@@ -31,5 +33,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbPath: (env.DB_PATH ?? "").trim() || "./data/xcavate.db",
     rateLimitPerMin: int(env.RATE_LIMIT_PER_MIN, 30),
     store: store === "sqlite" || store === "memory" ? store : "auto",
+    publishClientReports: (env.PUBLISH_CLIENT_REPORTS ?? "").trim().toLowerCase() === "true",
   };
 }

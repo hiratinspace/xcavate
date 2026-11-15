@@ -121,7 +121,7 @@ describe("runAnalysis", () => {
 
   it("stores the latest report per domain without per-visitor changes", async () => {
     const store = memStore();
-    await runAnalysis(request(policyText(NO_REFUND)), { store, llm: new MockLlm() });
+    await runAnalysis(request(policyText(NO_REFUND)), { store, llm: new MockLlm(), publishShared: true });
     const latest = store.getLatestReport("shop.example.com");
     expect(latest?.verdict).toBe("red");
     expect(latest?.changes).toBeUndefined();
