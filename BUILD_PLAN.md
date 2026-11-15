@@ -370,8 +370,8 @@ The model proposes a severity using this rubric. Code then applies the cap.
 - `unknown` — a checkout/sign-up page had policy links but none could be read.
 - `red` — at least one high flag.
 - `yellow` — at least one medium flag, or two or more low flags.
-- `partial` — no money flags, but no terms, refund or subscription policy could be read (never a false green).
-- `green` — at least one terms, refund or subscription policy analysed (or a manual scan) and none of the above.
+- `partial`: no money flags, but no terms, refund or subscription policy could be read (never a false green).
+- `green`: at least one terms, refund or subscription policy analysed (or a manual scan) and none of the above.
 
 Arbitration and data sharing are reported but never affect the verdict; "two or more low" counts money categories only (direction v2, V-01/V-02).
 
