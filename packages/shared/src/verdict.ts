@@ -1,10 +1,11 @@
 import type { Report, Verdict } from "./types.js";
 
-export const VERDICT_ICON: Record<Verdict, string> = { red: "!", yellow: "~", green: "✓", unknown: "?" };
+export const VERDICT_ICON: Record<Verdict, string> = { red: "!", yellow: "~", green: "✓", partial: "◐", unknown: "?" };
 export const VERDICT_WORD: Record<Verdict, string> = {
   red: "Read first",
   yellow: "Worth a look",
   green: "Looks fair",
+  partial: "Partly read",
   unknown: "Couldn't read",
 };
 
@@ -12,13 +13,15 @@ export const VERDICT_WORD: Record<Verdict, string> = {
 export function verdictHeadline(report: Pick<Report, "verdict" | "flags">): string {
   switch (report.verdict) {
     case "red": {
-      const n = Math.min(report.flags.length, 3);
+      const n = Math.max(1, Math.min(report.flags.filter((f) => f.severity !== "low").length, 3));
       return n === 1 ? "1 thing to read before you pay" : n + " things to read before you pay";
     }
     case "yellow":
       return "Worth a quick look";
     case "green":
       return "No money traps found in the terms";
+    case "partial":
+      return "No money traps in what we could read, but we couldn't read the terms or refund policy.";
     case "unknown":
       return "Couldn't read this site's terms. Open them and press Scan this page.";
   }

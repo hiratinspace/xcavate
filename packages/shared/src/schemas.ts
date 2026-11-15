@@ -18,7 +18,8 @@ export const CategorySchema = z.enum([
 ]);
 
 export const SeveritySchema = z.enum(["high", "medium", "low"]);
-export const VerdictSchema = z.enum(["red", "yellow", "green", "unknown"]);
+/** "partial": no money flags, but no terms, refund or subscription policy could be read (never a false green). */
+export const VerdictSchema = z.enum(["red", "yellow", "green", "partial", "unknown"]);
 export const PolicyKindSchema = z.enum(["subscription", "refund", "terms", "privacy", "other"]);
 export const PageTypeSchema = z.enum(["checkout", "signup", "none"]);
 
@@ -57,6 +58,10 @@ export const FlagSchema = z.object({
   title: z.string().max(LIMITS.maxTitleChars),
   summary: z.string(),
   costImpact: z.string().optional(),
+  /** Short context shown under the summary, e.g. "Normal for subscriptions: you can cancel online." */
+  context: z.string().max(160).optional(),
+  /** General consumer-law information for this flag (never advice), e.g. a state auto-renewal law. */
+  rightsNote: z.string().max(400).optional(),
   quote: z.string().max(LIMITS.maxQuoteChars),
   policyUrl: z.union([z.literal(""), httpUrl]), // "" for missing_policy
   paragraphIndex: z.number().int(),
