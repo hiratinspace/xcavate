@@ -61,17 +61,27 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   missing_policy: "Missing policy",
 };
 
-/** Severity rubric text for the LLM prompt (section 6.5). */
+/** Severity rubric text for the LLM prompt (section 6.5, recalibrated in direction v2 / V-01). Code still decides in server score.ts. */
 export const SEVERITY_RUBRIC: Record<Category, { high?: string; medium?: string; low?: string }> = {
-  auto_renewal: { high: "yearly renewal, or no reminder before charging", medium: "monthly renewal with a clear cancel path" },
-  trial_converts: { high: "charged automatically when the trial ends", medium: "must opt in to continue" },
+  auto_renewal: {
+    high: "renewal combined with harsh terms: cancel only by phone or mail, or 30+ days' notice",
+    medium: "yearly or prepaid renewal with no online way to cancel, or the price after renewal can rise",
+    low: "plain monthly or yearly renewal you can cancel online (normal for subscriptions)",
+  },
+  trial_converts: {
+    high: "converts automatically AND to a yearly/prepaid plan, or with no reminder, or cancel only by phone/mail",
+    medium: "a normal free trial that converts to a monthly plan you can cancel online",
+  },
   cancellation_friction: { high: "phone or mail only, or notice of 30 days or more", medium: "must contact support" },
   termination_fee: { high: "any fee for leaving early" },
   no_refund: { high: "'all sales final' or no refunds", medium: "store credit only, or a refund window of 14 days or less" },
   return_cost: { medium: "restocking fee, or the buyer pays return shipping" },
   price_change: { high: "price can change without notice", medium: "price can change with notice" },
   extra_fees: { medium: "named fees beyond price, tax and shipping" },
-  arbitration: { low: "forced arbitration or class-action waiver" },
-  data_sharing: { medium: "sells personal data", low: "shares with partners" },
+  arbitration: { low: "forced arbitration or class-action waiver (reported for information, does not affect the verdict)" },
+  data_sharing: {
+    medium: "sells personal data (reported for information, does not affect the verdict)",
+    low: "shares with partners (for information only)",
+  },
   missing_policy: { medium: "always" },
 };

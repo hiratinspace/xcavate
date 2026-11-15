@@ -353,8 +353,8 @@ The model proposes a severity using this rubric. Code then applies the cap.
 
 | Category | High when | Medium when | Low when | Cap |
 |---|---|---|---|---|
-| auto_renewal | yearly renewal, or no reminder before charging | monthly renewal with clear cancel path | – | high |
-| trial_converts | charged automatically when trial ends | must opt in to continue | – | high |
+| auto_renewal | renewal with harsh terms: phone/mail-only cancel or 30+ days' notice | yearly or prepaid renewal with no online cancel, or price can rise after renewal | plain renewal you can cancel online ("normal for subscriptions") | high |
+| trial_converts | converts automatically to a yearly/prepaid plan, or with no reminder, or with phone/mail-only cancel | normal trial that converts to a monthly plan you can cancel online | – | high |
 | cancellation_friction | phone or mail only, or notice ≥ 30 days | must contact support | – | high |
 | termination_fee | any fee for leaving early | – | – | high |
 | no_refund | "all sales final" / no refunds | store credit only, or window ≤ 14 days | – | high |
@@ -370,7 +370,10 @@ The model proposes a severity using this rubric. Code then applies the cap.
 - `unknown` — a checkout/sign-up page had policy links but none could be read.
 - `red` — at least one high flag.
 - `yellow` — at least one medium flag, or two or more low flags.
-- `green` — at least one policy analysed and none of the above.
+- `partial` — no money flags, but no terms, refund or subscription policy could be read (never a false green).
+- `green` — at least one terms, refund or subscription policy analysed (or a manual scan) and none of the above.
+
+Arbitration and data sharing are reported but never affect the verdict; "two or more low" counts money categories only (direction v2, V-01/V-02).
 
 ---
 
