@@ -3,10 +3,10 @@ import type { Flag } from "@xcavate/shared";
 import { describe, expect, it } from "vitest";
 import { buildRequest, caseById } from "../scripts/fixtureRequests.js";
 import { MockLlm } from "../src/llm/mock.js";
-import { CA_ONLINE_CANCEL_NOTE, rightsNotes } from "../src/pipeline/rights.js";
+import { CA_ONLINE_CANCEL_NOTE, rightsNotes } from "@xcavate/shared/engine";
 import { runAnalysis } from "../src/pipeline/run.js";
-import { CONTEXT_TEXT, recalibrate, sortFlags } from "../src/pipeline/score.js";
-import type { CalibrationContext } from "../src/pipeline/score.js";
+import { CONTEXT_TEXT, recalibrate, sortFlags } from "@xcavate/shared/engine";
+import type { CalibrationContext } from "@xcavate/shared/engine";
 import { FakeLlm, memStore, policyText, request as mkReq } from "./helpers.js";
 
 const run = (text: string, extra = {}) => runAnalysis(mkReq(text, extra), { store: memStore(), llm: new MockLlm() });

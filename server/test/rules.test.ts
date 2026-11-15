@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { clauseBefore, isNegated, matchParagraph, runRules } from "../src/pipeline/rules.js";
-import type { RuleCategory } from "../src/pipeline/rules.js";
+import { clauseBefore, isNegated, matchParagraph, runRules } from "@xcavate/shared/engine";
+import type { RuleCategory } from "@xcavate/shared/engine";
 
 const hits = (text: string) => matchParagraph({ index: 0, text });
 const cats = (text: string) => [...new Set(hits(text).map((h) => h.category))];

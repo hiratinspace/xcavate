@@ -13,6 +13,7 @@ import {
   type Report,
   type TabState,
 } from "@xcavate/shared";
+import { runRulesOnly } from "@xcavate/shared/engine";
 import { fetchCapped } from "../lib/fetchCapped";
 import { isFetchAllowed } from "../lib/netguard";
 import { buildAnalyzeRequest } from "../lib/request";
@@ -88,6 +89,12 @@ export function createHandlers(deps: Deps = {}) {
     }
     const dismissed = tabId !== undefined && (await isDismissed(tabId, domain));
     const extra = dismissed ? { dismissed: true } : {};
+    // AI check off: only the on-device verdict is used, and nothing (not even the domain) is sent.
+    if (!settings.aiCheck) {
+      if (tabId !== undefined) await setTab(tabId, { status: "checking", ...base });
+      await setBadge(tabId, undefined, "checking");
+      return { ...extra };
+    }
     const cached = await getCachedReport(domain, now());
     if (cached) {
       if (tabId !== undefined) await setTab(tabId, { status: "ready", ...base });
@@ -136,42 +143,80 @@ export function createHandlers(deps: Deps = {}) {
       }
     }
 
+    const cleared = { localReport: undefined, localCheck: undefined };
     try {
-      const hashes = await Promise.all(request.policies.map((p) => (p.text ? sha256Hex(normalizeForHash(p.text)) : "")));
-      const cached = await getCachedReport(domain, now());
-      if (cached && cacheStillValid(cached, request, hashes)) {
-        await writeIfCurrent(tabId, pageUrl, { status: "ready", domain, error: undefined }, cached);
-        return { ok: true, report: cached };
+      if (settings.aiCheck) {
+        const hashes = await Promise.all(request.policies.map((p) => (p.text ? sha256Hex(normalizeForHash(p.text)) : "")));
+        const cached = await getCachedReport(domain, now());
+        if (cached && cacheStillValid(cached, request, hashes)) {
+          await writeIfCurrent(tabId, pageUrl, { status: "ready", domain, error: undefined, ...cleared }, cached);
+          return { ok: true, report: cached };
+        }
       }
 
-      if (tabId !== undefined && (await stillOn(tabId, pageUrl))) await patchTab(tabId, { status: "checking", domain, error: undefined });
-      // De-dupe per domain (and policy set, so a manual scan never borrows a checkout's result).
-      const flightKey = domain + "|" + request.policies.map((x) => x.url).join(" ");
-      let p = inflight.get(flightKey);
-      if (!p) {
-        const withHashes = await Promise.all(
-          request.policies.map(async (pol) => ({ ...pol, previousHash: (await getPolicyHash(pol.url)) ?? undefined })),
-        );
-        const body = buildAnalyzeRequest({ ...request, policies: withHashes });
-        p = postAnalyze(settings.apiBase, body, { fetchImpl }).then(async (report) => {
-          await saveReport(report, now());
-          for (const m of report.policies) if (m.status === "analyzed" && m.textHash) await setPolicyHash(m.url, m.textHash);
-          return report;
-        });
-        inflight.set(flightKey, p);
-        p.finally(() => inflight.delete(flightKey)).catch(() => undefined);
+      // V-06: the rules engine on this device gives the first verdict at once, with no network.
+      // It stays in tab state only; the backend's report (rules + AI) replaces it when it arrives.
+      let local: Report | undefined;
+      try {
+        local = await runRulesOnly(buildAnalyzeRequest(request));
+      } catch {
+        local = undefined;
       }
-      const report = await p;
-      await writeIfCurrent(tabId, pageUrl, { status: "ready", domain }, report);
+
+      if (!settings.aiCheck) {
+        if (!local) throw new Error("local check failed");
+        await writeIfCurrent(tabId, pageUrl, { status: "ready", domain, error: undefined, localReport: local, localCheck: "off" }, local);
+        return { ok: true, report: local };
+      }
+
+      if (tabId !== undefined && (await stillOn(tabId, pageUrl))) {
+        if (local) {
+          // Status stays "checking" (the popup keeps polling) while the badge already shows the verdict.
+          await writeIfCurrent(tabId, pageUrl, { status: "checking", domain, error: undefined, localReport: local, localCheck: "pending" }, local);
+          await notifyTab(tabId, { type: MSG.REPORT, report: local });
+        } else await patchTab(tabId, { status: "checking", domain, error: undefined, ...cleared });
+      }
+
+      let report: Report;
+      try {
+        report = await backendReport(request, domain, settings.apiBase);
+      } catch (e) {
+        if (!local) throw e;
+        // Backend down or invalid: the on-device verdict is the result, not an error.
+        await writeIfCurrent(tabId, pageUrl, { status: "ready", domain, error: undefined, localReport: local, localCheck: "unavailable" }, local);
+        return { ok: true, report: local };
+      }
+      await writeIfCurrent(tabId, pageUrl, { status: "ready", domain, ...cleared }, report);
       return { ok: true, report };
     } catch (e) {
       const error = String((e as Error)?.message ?? e);
       if (await stillOn(tabId, pageUrl)) {
-        await writeIfCurrent(tabId, pageUrl, { status: "error", domain, error }, undefined);
+        await writeIfCurrent(tabId, pageUrl, { status: "error", domain, error, ...cleared }, undefined);
         await notifyTab(tabId, { type: MSG.STATUS, status: "error" });
       }
       return { ok: false, error };
     }
+  }
+
+  /** One backend call per domain + policy set at a time (a manual scan never borrows a checkout's result). */
+  function backendReport(request: AnalyzeRequest, domain: string, apiBase: string): Promise<Report> {
+    const flightKey = domain + "|" + request.policies.map((x) => x.url).join(" ");
+    let p = inflight.get(flightKey);
+    if (!p) {
+      p = (async () => {
+        const withHashes = await Promise.all(
+          request.policies.map(async (pol) => ({ ...pol, previousHash: (await getPolicyHash(pol.url)) ?? undefined })),
+        );
+        const body = buildAnalyzeRequest({ ...request, policies: withHashes });
+        const report = await postAnalyze(apiBase, body, { fetchImpl });
+        await saveReport(report, now());
+        for (const m of report.policies) if (m.status === "analyzed" && m.textHash) await setPolicyHash(m.url, m.textHash);
+        return report;
+      })();
+      inflight.set(flightKey, p);
+      p.finally(() => inflight.delete(flightKey)).catch(() => undefined);
+    }
+    return p;
   }
 
   async function localFindings(msg: Extract<Message, { type: "LOCAL_FINDINGS" }>, tabId?: number): Promise<OkReply> {
@@ -189,8 +234,11 @@ export function createHandlers(deps: Deps = {}) {
 
   async function getState(tabId: number): Promise<TabState> {
     const tab = await getTab(tabId);
-    const report = tab.domain && tab.status !== "idle" ? await getCachedReport(tab.domain, now()) : undefined;
-    return { status: tab.status, report, fees: tab.fees, darkPatterns: tab.darkPatterns, pageType: tab.pageType, error: tab.error };
+    const local = tab.status !== "idle" && tab.status !== "error" ? tab.localReport : undefined;
+    const report = local ?? (tab.domain && tab.status !== "idle" ? await getCachedReport(tab.domain, now()) : undefined);
+    const state: TabState = { status: tab.status, report, fees: tab.fees, darkPatterns: tab.darkPatterns, pageType: tab.pageType, error: tab.error };
+    if (local && tab.localCheck) state.localCheck = tab.localCheck;
+    return state;
   }
 
   async function scanTab(tabId: number): Promise<OkReply> {

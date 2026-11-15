@@ -140,18 +140,22 @@ describe("ANALYZE", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("backend down → status error, STATUS sent to the tab, no throw", async () => {
+  it("backend down → the on-device verdict stands: status ready, no STATUS error, no throw (V-06)", async () => {
     const h = createHandlers({ fetchImpl: (async () => { throw new TypeError("Failed to fetch"); }) as typeof fetch });
     const r = await h.analyze(req(), TAB);
-    expect(r.ok).toBe(false);
-    expect(mock.session.data()["tab:7"]).toMatchObject({ status: "error" });
-    expect(mock.chrome.tabs.sendMessage).toHaveBeenCalledWith(TAB, { type: "STATUS", status: "error" });
-    expect(mock.badges.get(TAB)?.text).toBe("");
+    expect(r.ok).toBe(true);
+    expect(r.report?.stats.usedLlm).toBe(false);
+    expect(mock.session.data()["tab:7"]).toMatchObject({ status: "ready", localCheck: "unavailable" });
+    expect(mock.chrome.tabs.sendMessage).not.toHaveBeenCalledWith(TAB, { type: "STATUS", status: "error" });
+    expect(mock.badges.get(TAB)?.text).not.toBe("");
   });
 
-  it("invalid report from backend → error", async () => {
+  it("invalid report from backend → the on-device verdict, never the invalid body", async () => {
     const h = createHandlers({ fetchImpl: (async () => jsonResponse({ nope: true })) as typeof fetch });
-    expect((await h.analyze(req(), TAB)).ok).toBe(false);
+    const r = await h.analyze(req(), TAB);
+    expect(r.ok).toBe(true);
+    expect(r.report?.stats.usedLlm).toBe(false);
+    expect(mock.local.data()["report:" + DOMAIN]).toBeUndefined();
   });
 });
 

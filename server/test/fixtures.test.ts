@@ -5,9 +5,9 @@ import { describe, expect, it } from "vitest";
 import { FIXTURES_DIR } from "../../fixtures/load.js";
 import { FIXTURE_CASES, STREAMNEST_V2, buildRequest, caseById, policyText } from "../scripts/fixtureRequests.js";
 import { MockLlm } from "../src/llm/mock.js";
-import { prefilter } from "../src/pipeline/prefilter.js";
+import { prefilter } from "@xcavate/shared/engine";
 import { runAnalysis } from "../src/pipeline/run.js";
-import { splitParagraphs } from "../src/pipeline/split.js";
+import { splitParagraphs } from "@xcavate/shared/engine";
 import { failingLlm, memStore } from "./helpers.js";
 
 const golden = GoldenSchema.parse(JSON.parse(readFileSync(join(FIXTURES_DIR, "golden.json"), "utf8")));

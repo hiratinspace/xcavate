@@ -1,5 +1,5 @@
-import { CATEGORY_ORDER, SEVERITY_CAPS, SEVERITY_RANK } from "@xcavate/shared";
-import type { AnalyzeRequest, Category, Flag, PolicyKind, Severity, Verdict } from "@xcavate/shared";
+import { CATEGORY_ORDER, SEVERITY_CAPS, SEVERITY_RANK } from "../core.js";
+import type { AnalyzeRequest, Category, Flag, PolicyKind, Severity, Verdict } from "../core.js";
 import { AUTO_CHARGE, isYearlyOrPrepaid } from "./rules.js";
 import { lpNormalize } from "./textutil.js";
 

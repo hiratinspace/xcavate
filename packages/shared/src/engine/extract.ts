@@ -1,5 +1,5 @@
-import { LIMITS } from "@xcavate/shared";
-import type { CancellationInfo, TrialInfo } from "@xcavate/shared";
+import { LIMITS } from "../core.js";
+import type { CancellationInfo, TrialInfo } from "../core.js";
 import type { Paragraph } from "./split.js";
 import { hasAltChannel, isNegated } from "./rules.js";
 import { NUM, clip, findMoney, findPeriod, lpNormalize, splitSentences, toNumber } from "./textutil.js";

@@ -52,8 +52,17 @@ export interface TabState {
   darkPatterns?: DarkPatternFinding[];
   pageType?: PageType;
   error?: string;
+  /**
+   * Set when `report` was made on this device by the rules engine (V-06), never sent anywhere:
+   * pending = the AI check is still running; unavailable = it failed, so this is the result;
+   * off = the user turned the AI check off. Absent: the report came from the Xcavate service.
+   */
+  localCheck?: LocalCheck;
 }
 
-export interface Settings { enabled: boolean; apiBase: string; pausedDomains: string[] }
-export const DEFAULT_SETTINGS: Settings = { enabled: true, apiBase: "http://localhost:8787", pausedDomains: [] };
+export type LocalCheck = "pending" | "unavailable" | "off";
+
+/** aiCheck: send policy text to the Xcavate service for the AI pass (V-06). Off: nothing leaves the browser. */
+export interface Settings { enabled: boolean; apiBase: string; pausedDomains: string[]; aiCheck: boolean }
+export const DEFAULT_SETTINGS: Settings = { enabled: true, apiBase: "http://localhost:8787", pausedDomains: [], aiCheck: true };
 export const REPORT_TTL_MS = 24 * 60 * 60 * 1000;

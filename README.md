@@ -148,7 +148,7 @@ extension/         Manifest V3 extension (TypeScript, esbuild)
   SMOKE_TEST.md    manual end-to-end checklist over the demo stores
 server/            Express backend
   src/routes/      /healthz, /v1/analyze, /v1/report, rate limit
-  src/pipeline/    split, prefilter, rules, verify, ground, score, diff, rights
+  src/pipeline/    run.ts: orchestration (rules engine itself: packages/shared/src/engine)
   src/llm/         provider interface, Anthropic client, offline mock, prompt
   src/store/       SQLite and in-memory stores
   scripts/         seed (pre-analyses the demo stores)

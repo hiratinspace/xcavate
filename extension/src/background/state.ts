@@ -1,4 +1,4 @@
-import { REPORT_TTL_MS, type DarkPatternFinding, type FeeSummary, type PageType, type Report, type TabStatus } from "@xcavate/shared";
+import { REPORT_TTL_MS, type DarkPatternFinding, type LocalCheck, type FeeSummary, type PageType, type Report, type TabStatus } from "@xcavate/shared";
 
 /**
  * Storage owned by the service worker (BUILD_PLAN 6.4).
@@ -17,6 +17,13 @@ export interface StoredTab {
   fees?: FeeSummary;
   darkPatterns?: DarkPatternFinding[];
   error?: string;
+  /**
+   * V-06: the on-device rules-only report for this page. It lives only in tab state (never in the
+   * per-domain report cache, so it can never stop the AI check from running next time).
+   */
+  localReport?: Report;
+  /** How far the AI check got for `localReport` (see TabState.localCheck). */
+  localCheck?: LocalCheck;
 }
 
 const reportKey = (domain: string) => "report:" + domain;

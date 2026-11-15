@@ -1,4 +1,4 @@
-import { KEYWORDS, LIMITS, normalizeForMatch } from "@xcavate/shared";
+import { KEYWORDS, LIMITS, normalizeForMatch } from "../core.js";
 import type { Paragraph } from "./split.js";
 
 const ALL_KEYWORDS: string[] = [...new Set(Object.values(KEYWORDS).flat())];

@@ -45,6 +45,9 @@ export class Card {
   private domain = "";
   private report: Report | undefined;
   private local: LocalFindings = {};
+  /** The headline node last rendered; kept across a same-verdict update so nothing is re-announced. */
+  private headlineEl: HTMLElement | undefined;
+  private inPlace = false;
   private onKey = (e: KeyboardEvent) => this.handleKey(e);
 
   constructor(private doc: Document, private opts: CardOptions = {}) {
@@ -64,13 +67,20 @@ export class Card {
   }
 
   showChecking(domain: string): void {
+    this.inPlace = false;
     this.domain = domain;
     this.report = undefined;
     this.state = "checking";
     this.render();
   }
 
+  /**
+   * Show a report. When a report with the same verdict is already shown (V-06: the on-device
+   * verdict, then the backend's), the card updates in place: same headline node, no re-announcement.
+   * A different verdict re-renders with the normal role=status announcement.
+   */
   showReport(report: Report): void {
+    this.inPlace = this.state === "report" && this.host.isConnected && this.report?.verdict === report.verdict;
     this.report = report;
     this.domain = report.domain;
     this.state = "report";
@@ -79,7 +89,9 @@ export class Card {
 
   setLocal(local: LocalFindings): void {
     this.local = local;
-    if (this.state !== "hidden") this.render();
+    if (this.state === "hidden") return;
+    this.inPlace = this.host.isConnected; // same verdict and headline: keep the live region quiet
+    this.render();
   }
 
   /** Remove the card without remembering anything (error state, navigation away). */
@@ -141,9 +153,18 @@ export class Card {
     const headline = !r
       ? "Reading this site's terms before you pay…"
       : charge ?? verdictHeadline({ verdict: r.verdict, flags: shown.length ? shown : r.flags });
-    const h = el(d, "p", "headline", headline);
-    h.setAttribute("role", "status");
-    h.setAttribute("aria-live", "polite");
+    const prev = this.inPlace ? this.headlineEl : undefined;
+    this.inPlace = false;
+    let h: HTMLElement;
+    if (prev) {
+      h = prev;
+      if (h.textContent !== headline) h.textContent = headline;
+    } else {
+      h = el(d, "p", "headline", headline);
+      h.setAttribute("role", "status");
+      h.setAttribute("aria-live", "polite");
+    }
+    this.headlineEl = h;
     head.appendChild(h);
     if (this.domain) head.appendChild(el(d, "p", "site", this.domain));
     body.appendChild(head);

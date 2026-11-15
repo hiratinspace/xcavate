@@ -1,5 +1,5 @@
-import { CATEGORY_LABEL, CATEGORY_MEANING, KEYWORDS, normalizeForMatch } from "@xcavate/shared";
-import type { Category } from "@xcavate/shared";
+import { CATEGORY_LABEL, CATEGORY_MEANING, KEYWORDS, normalizeForMatch } from "../core.js";
+import type { Category } from "../core.js";
 import { isNegated } from "./rules.js";
 import { NUM, findMoney, lpNormalize, toNumber } from "./textutil.js";
 
