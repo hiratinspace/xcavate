@@ -10,7 +10,7 @@ A local stage for the real extension. Nothing here is for sale. No model accurac
 4. Confirm **Backend ready**, **Mock provider**, and StreamNest **v1**.
 5. Press **Take the 3-minute tour**. The tour restores policy v1 and resets its timer. Press **Start timer** when speaking.
 
-The seven beats cover the hook, trial and quoted proof, reminder and cancellation, pre-checked extras, clean control, hostile terms, and closing. Arrow keys move between beats; Escape exits and pauses the timer. Each live-case link reuses a separate tab so the presenter can return to the story. Use **Open a fresh tab** on a scenario if its card was dismissed. Do not press Escape on the live checkout unless testing dismissal.
+The seven beats cover the hook (no case launch), StreamNest trial and quoted proof with reminder and cancellation, PrivacyOnly incomplete coverage, Gadgetly pre-checked extras, FairBox clean control, SneakyTerms hostile terms, and closing. Each case appears once, with its name on the launch button. Arrow keys move between beats; Escape exits and pauses the timer. Each live-case link reuses a separate tab so the presenter can return to the story. Use **Open a fresh tab** on a scenario if its card was dismissed. Do not press Escape on the live checkout unless testing dismissal.
 
 The `.ics` reminder is the reliable offline action. Google Calendar needs Wi-Fi. An email draft can open a mail app; it is not sent automatically. This is rules-only mock mode: it does not demonstrate a live LLM or establish real-site accuracy.
 
@@ -34,7 +34,7 @@ The fixture directory remains at http://localhost:4000/fixtures. Static assets r
 
 ## Opening evidence and positioning
 
-The 45-second opening positions Xcavate as an everyday decision helper, organized around four questions: What will this cost? What am I agreeing to? What happens to my data? How can I get out? It asks about family members and includes the shopper themselves; it does not assume older people cannot use technology.
+The 45-second opening positions Xcavate as an everyday decision helper, organized around four questions: What will this cost? What am I agreeing to? What happens to my data? How can I get out? It starts with the consequences of an everyday click: recurring charges, extra fees, and data sharing. It then explains the browser companion in plain language and leads directly into checkout.
 
 The opening screen cites the [2024 global privacy sweep, reported by the Privacy Commissioner of Canada](https://www.priv.gc.ca/en/opc-news/news-and-announcements/2024/nr-c_240709/). Of more than 1,000 websites and apps reviewed, 97% used one or more deceptive design patterns that may influence people to provide more personal information. This was the reviewed sample, not all websites, a monetary-loss estimate, or a finding that 97% of sites are scams. The figure stays on screen; the spoken hook focuses on everyday decisions. The Amazon settlement and subscription-only prevalence figure have been removed.
 
@@ -42,4 +42,4 @@ Current demonstration: public-policy findings, including data-sharing and disput
 
 Broader vision: a trusted companion for informed browsing and spending. Site-reputation checks and phishing warnings are integrated into the opening as the intended product design, using “designed to” rather than claiming they are demonstrated. Neither is implemented in this build. Before presenting either as working at judging, implement and verify it. There is no separate roadmap slide. Implementation reminders stay in the expandable Presenter notes, closed by default; the live-case launcher remains visible. Malware detection and detecting every suspicious interface are not implemented capabilities. Concealed information and manipulative controls can be relevant signals, but minified, unusual, or hostile CSS alone does not establish that a website is fraudulent. The hostile-CSS fixture proves the extension card remains isolated; it does not prove the store is a scam.
 
-Opening runs 0:00–0:45; the remaining beats have been retimed to keep the full story at three minutes. Research links need a network; the quoted figure and source attribution remain visible offline.
+Opening runs 0:00–0:45 without a live-case link; the remaining beats have been retimed to keep the full story at three minutes. Research links need a network; the quoted figure and source attribution remain visible offline.
