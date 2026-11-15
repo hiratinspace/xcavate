@@ -87,7 +87,8 @@ describe("runAnalysis", () => {
     const llm = new FakeLlm();
     const r = await runAnalysis(request(policyText("We love dogs and cats.")), { store: memStore(), llm });
     expect(llm.calls).toBe(0);
-    expect(r.verdict).toBe("green");
+    // Nothing about money in the text: partly read, never a false green (direction v3).
+    expect(r.verdict).toBe("partial");
     expect(r.stats.usedLlm).toBe(false);
   });
 

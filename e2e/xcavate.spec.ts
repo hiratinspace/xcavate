@@ -8,21 +8,28 @@ import {
   cardVerdict,
   clearCachedReports,
   expect,
+  liveSw,
   openPopupFor,
   readCard,
   readMarks,
   screenshotCard,
+  setSettings,
   tabIdOf,
   tabState,
   test,
   waitForCardVerdict,
+  waitForServiceReport,
   waitForStatus,
 } from "./support/harness";
 
 /**
  * V-04: extension/SMOKE_TEST.md, automated. Each test asserts what a shopper would see: the card
  * (read through CDP, it sits in a closed shadow root), the toolbar badge, the popup, and what the
- * service worker sent to the backend (counted by the proxy on :8787).
+ * service worker sent to the backend (counted by the proxy, see support/servers.ts).
+ *
+ * The e2e backend runs the mock, i.e. the same rules engine as the on-device pass, so a card could
+ * show the right verdict even if the backend's report never replaced the local one. The proxy marks
+ * the backend's reports (stats.usedLlm = true); tests 1-4 wait for that report, then read the card.
  */
 
 const ymd = (d: Date) => d.getFullYear().toString() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
@@ -39,8 +46,9 @@ test.describe("Xcavate in a real Chromium", () => {
     await page.goto(STORE("streamnest", "checkout"));
     const tabId = await tabIdOf(ext, page);
 
-    const card = await waitForCardVerdict(page);
-    const state = await waitForStatus(ext, tabId, "ready");
+    await waitForCardVerdict(page);
+    const state = await waitForServiceReport(ext, tabId);
+    const card = await readCard(page);
     expect(state.report?.verdict).toBe("red");
     expect(state.localCheck, "final report comes from the service, not the on-device pass").toBeUndefined();
     expect(cardVerdict(card)).toBe("red");
@@ -73,8 +81,9 @@ test.describe("Xcavate in a real Chromium", () => {
   test("2. Gadgetly checkout: yellow, fee and pre-checked add-on, checkbox untouched", async ({ ext, page }) => {
     await page.goto(STORE("gadgetly", "checkout"));
     const tabId = await tabIdOf(ext, page);
-    const card = await waitForCardVerdict(page);
-    const state = await waitForStatus(ext, tabId, "ready");
+    await waitForCardVerdict(page);
+    const state = await waitForServiceReport(ext, tabId);
+    const card = await readCard(page);
     expect(state.report?.verdict).toBe("yellow");
     expect(cardVerdict(card)).toBe("yellow");
 
@@ -120,8 +129,9 @@ test.describe("Xcavate in a real Chromium", () => {
   test("3. FairBox checkout: green, no flags", async ({ ext, page }) => {
     await page.goto(STORE("fairbox", "checkout"));
     const tabId = await tabIdOf(ext, page);
-    const card = await waitForCardVerdict(page);
-    const state = await waitForStatus(ext, tabId, "ready");
+    await waitForCardVerdict(page);
+    const state = await waitForServiceReport(ext, tabId);
+    const card = await readCard(page);
     expect(state.report?.verdict).toBe("green");
     expect(state.report?.flags).toEqual([]);
     expect(cardVerdict(card)).toBe("green");
@@ -135,8 +145,9 @@ test.describe("Xcavate in a real Chromium", () => {
   test("4. SneakyTerms checkout: red despite the attack, hostile CSS doesn't reach the card", async ({ ext, page }) => {
     await page.goto(STORE("sneakyterms", "checkout"));
     const tabId = await tabIdOf(ext, page);
-    const card = await waitForCardVerdict(page);
-    const state = await waitForStatus(ext, tabId, "ready");
+    await waitForCardVerdict(page);
+    const state = await waitForServiceReport(ext, tabId);
+    const card = await readCard(page);
     expect(state.report?.verdict).toBe("red");
     expect(cardVerdict(card)).toBe("red");
     expect(categories(state)).toEqual(expect.arrayContaining(["no_refund", "termination_fee"]));
@@ -212,46 +223,47 @@ test.describe("Xcavate in a real Chromium", () => {
   });
 
   /**
-   * With the on-device rules engine (V-06), a stopped backend is not an error: the local verdict is
-   * the result (status "ready", localCheck "unavailable"), FairBox stays green, and the popup says the
-   * AI check was unavailable. The page itself is untouched and nothing reaches the stopped backend.
+   * With the on-device rules engine (V-06), an unreachable service is not an error: the local verdict
+   * is the result (status "ready", localCheck "unavailable"), FairBox stays green, and the popup says
+   * the AI check was unavailable. The proxy stays up and answers 503, so the count below is real:
+   * the worker did try, and nothing it got back was used.
    */
   test("8. Backend down: page unaffected, on-device verdict, no backend report", async ({ ext, page }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (e) => pageErrors.push(String(e)));
     await clearCachedReports(ext);
-    await ext.servers.stopBackend();
+    ext.servers.mode = "down";
     const callsBefore = ext.servers.calls.length;
     try {
       await page.goto(STORE("fairbox", "checkout"));
       const tabId = await tabIdOf(ext, page);
-      const state = await waitForStatus(ext, tabId, /^ready$/, 40_000);
-      // Settle: with V-06 the status passes "checking" with a local report before "ready".
-      await page.waitForTimeout(1_000);
-      const final = await tabState(ext, tabId);
-      expect(final.status).toBe(state.status);
+      await expect.poll(async () => (await tabState(ext, tabId)).localCheck, { timeout: 40_000 }).toBe("unavailable");
+      const final = await waitForStatus(ext, tabId, "ready");
 
       // The page itself still works.
       await expect(page.locator("#pay")).toBeVisible();
       await expect(page.locator("#pay")).toBeEnabled();
       expect(pageErrors).toEqual([]);
-      expect(ext.servers.calls.length).toBe(callsBefore); // the proxy is down: nothing got through
+      const tried = ext.servers.apiCalls(callsBefore);
+      expect(tried.filter((c) => c.path === "/v1/analyze" && c.target === "http://fairbox.localhost:4000/")).toHaveLength(1);
+      expect(tried.every((c) => c.status === 503)).toBe(true);
 
       const popup = await openPopupFor(ext, page, tabId);
       try {
         expect(final.localCheck).toBe("unavailable");
         expect(final.report?.verdict).toBe("green");
+        expect(final.report?.stats.usedLlm).toBe(false);
         const card = await waitForCardVerdict(page);
         expect(cardVerdict(card)).toBe("green");
         await expect.poll(() => badgeText(ext, tabId)).toBe("✓");
-        await expect(popup.getByText("Checked on your device (AI check unavailable).")).toBeVisible();
+        await expect(popup.getByText("AI check unavailable, showing the on-device result.")).toBeVisible();
         await screenshotCard(page, "fairbox-backend-down-card");
         await popup.screenshot({ path: join(SCREENS, "e2e-popup-backend-down.png") });
       } finally {
         await popup.close();
       }
     } finally {
-      await ext.servers.startBackend();
+      ext.servers.mode = "model";
     }
   });
 
@@ -283,6 +295,57 @@ test.describe("Xcavate in a real Chromium", () => {
       await popup.screenshot({ path: join(SCREENS, "e2e-popup-streamnest.png"), fullPage: true });
     } finally {
       await popup.close();
+    }
+  });
+
+  test("10. AI check off: zero calls to the service (not even /v1/report), verdict from the device", async ({ ext, page }) => {
+    await clearCachedReports(ext);
+    await setSettings(ext, { aiCheck: false });
+    const before = ext.servers.calls.length;
+    try {
+      await page.goto(STORE("sneakyterms", "checkout"));
+      const tabId = await tabIdOf(ext, page);
+      const card = await waitForCardVerdict(page);
+      await expect.poll(async () => (await tabState(ext, tabId)).localCheck).toBe("off");
+      const state = await waitForStatus(ext, tabId, "ready");
+      expect(state.report?.verdict).toBe("red");
+      expect(state.report?.stats.usedLlm).toBe(false);
+      expect(cardVerdict(card)).toBe("red");
+      // Give any (wrong) late lookup a chance to happen.
+      await page.waitForTimeout(2_000);
+      expect(ext.servers.apiCalls(before)).toEqual([]);
+    } finally {
+      await setSettings(ext, { aiCheck: true });
+    }
+  });
+
+  test("11. Model fallback (rules-only report): shown with a note, not cached, next visit asks again", async ({ ext, page }) => {
+    await clearCachedReports(ext);
+    ext.servers.mode = "rulesOnly";
+    try {
+      const before = ext.servers.analyzeCalls("gadgetly").length;
+      await page.goto(STORE("gadgetly", "checkout"));
+      const tabId = await tabIdOf(ext, page);
+      await waitForCardVerdict(page);
+      await expect.poll(async () => (await tabState(ext, tabId)).localCheck, { timeout: 30_000 }).toBe("unavailable");
+      const state = await waitForStatus(ext, tabId, "ready");
+      expect(state.report?.verdict).toBe("yellow");
+      expect(ext.servers.analyzeCalls("gadgetly").length - before).toBe(1);
+      const sw = await liveSw(ext);
+      const cached = await sw.evaluate(async () => Object.keys(await chrome.storage.local.get(null)).filter((k) => k.startsWith("report:gadgetly")));
+      expect(cached, "a rules-only fallback must not be cached").toEqual([]);
+
+      const popup = await openPopupFor(ext, page, tabId);
+      try {
+        await expect(popup.getByText("AI check unavailable, showing the on-device result.")).toBeVisible();
+      } finally {
+        await popup.close();
+      }
+
+      await page.reload();
+      await expect.poll(() => ext.servers.analyzeCalls("gadgetly").length - before, { timeout: 30_000 }).toBe(2);
+    } finally {
+      ext.servers.mode = "model";
     }
   });
 });

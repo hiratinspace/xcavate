@@ -14,3 +14,4 @@ export * from "./rights.js";
 export * from "./textutil.js";
 export * from "./diff.js";
 export * from "./analyze.js";
+export * from "./scope.js";

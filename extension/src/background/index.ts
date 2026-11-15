@@ -1,4 +1,5 @@
-import type { Message } from "@xcavate/shared";
+import type { Message, Settings } from "@xcavate/shared";
+import { SETTINGS_KEY } from "../lib/settings";
 import { createHandlers } from "./handlers";
 import { clearTab } from "./state";
 
@@ -18,4 +19,16 @@ chrome.runtime.onMessage.addListener((msg: Message, sender, sendResponse) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   void clearTab(tabId);
+});
+
+// A full navigation (or an SPA route change) to another page ends the old page's state and badge.
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  void handlers.tabUpdated(tabId, info, tab?.url).catch(() => undefined);
+});
+
+// Turning the AI check off cancels backend calls already in flight.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes[SETTINGS_KEY]) return;
+  const { newValue, oldValue } = changes[SETTINGS_KEY] as { newValue?: Partial<Settings>; oldValue?: Partial<Settings> };
+  handlers.settingsChanged(newValue, oldValue);
 });

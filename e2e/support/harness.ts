@@ -2,7 +2,7 @@ import { test as base, chromium, expect, type BrowserContext, type CDPSession, t
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ROOT, Servers } from "./servers";
+import { API_BASE, ROOT, Servers } from "./servers";
 
 /**
  * Worker fixture: servers + a fresh Chromium profile with extension/dist loaded.
@@ -11,7 +11,8 @@ import { ROOT, Servers } from "./servers";
  * page.evaluate can't reach (it runs in the page's main world, not the content script's). The
  * Chrome DevTools Protocol can: DOM.getDocument with pierce:true returns closed shadow roots too.
  * So the card is read as a CDP DOM tree (text, attributes, box, computed style). Extension state
- * comes from the service worker (chrome.storage + chrome.action.getBadgeText via sw.evaluate).
+ * comes from the service worker itself: tab state through its real GET_STATE handler (sent from an
+ * extension page, like the popup does), the badge through chrome.action.getBadgeText.
  */
 
 export const DIST = join(ROOT, "extension/dist");
@@ -23,6 +24,8 @@ export interface Ext {
   sw: Worker;
   id: string;
   servers: Servers;
+  /** An extension page used to send runtime messages (GET_STATE) to the worker, like the popup. */
+  probe: Page;
 }
 
 export interface TabSnapshot {
@@ -39,6 +42,8 @@ export interface TabSnapshot {
     flags: { category: string; severity: string; title: string; quote: string; policyUrl: string }[];
     trial?: { lengthDays?: number; priceAfter?: string };
     policies: { url: string; status: string }[];
+    /** usedLlm is true only for the e2e service's reports (its proxy marks them), never on-device ones. */
+    stats: { usedLlm: boolean };
   };
 }
 
@@ -62,8 +67,15 @@ export const test = base.extend<{ page: Page }, { ext: Ext }>({
       let [sw] = context.serviceWorkers();
       if (!sw) sw = await context.waitForEvent("serviceworker", { timeout: 15_000 });
       const id = new URL(sw.url()).host;
+      // Point the extension at the e2e proxy before any page loads (the dev server may hold :8787).
+      await sw.evaluate(
+        (apiBase) => chrome.storage.local.set({ settings: { enabled: true, apiBase, pausedDomains: [], aiCheck: true } }),
+        API_BASE,
+      );
+      const probe = await context.newPage();
+      await probe.goto(`chrome-extension://${id}/popup.html`);
       try {
-        await use({ context, sw, id, servers });
+        await use({ context, sw, id, servers, probe });
       } finally {
         await context.close().catch(() => undefined);
         await servers.stop().catch(() => undefined);
@@ -107,19 +119,37 @@ export async function tabIdOf(ext: Ext, page: Page): Promise<number> {
   return id;
 }
 
+/** The worker's own GET_STATE answer for this tab (the same call the popup makes). */
 export async function tabState(ext: Ext, tabId: number): Promise<TabSnapshot> {
+  await liveSw(ext); // wakes the worker if Chrome stopped it
+  const state = await ext.probe.evaluate((tid) => chrome.runtime.sendMessage({ type: "GET_STATE", tabId: tid }), tabId);
+  return (state ?? { status: "idle" }) as TabSnapshot;
+}
+
+/** The current settings in the worker's storage, patched. */
+export async function setSettings(ext: Ext, patch: Record<string, unknown>): Promise<void> {
   const sw = await liveSw(ext);
-  return sw.evaluate(async (tid) => {
-    const key = "tab:" + tid;
-    const tab = ((await chrome.storage.session.get(key))[key] ?? { status: "idle" }) as Record<string, unknown>;
-    // Mirrors the worker's GET_STATE: an on-device report (V-06) wins while it is the tab's result.
-    let report: unknown = tab.status !== "idle" && tab.status !== "error" ? tab.localReport : undefined;
-    if (!report && typeof tab.domain === "string") {
-      const rk = "report:" + tab.domain;
-      report = ((await chrome.storage.local.get(rk))[rk] as { report?: unknown } | undefined)?.report;
-    }
-    return { ...tab, report } as never;
-  }, tabId);
+  await sw.evaluate(async (p) => {
+    const cur = ((await chrome.storage.local.get("settings")).settings ?? {}) as Record<string, unknown>;
+    await chrome.storage.local.set({ settings: { ...cur, ...p } });
+  }, patch);
+}
+
+/**
+ * Wait until the tab's final result is the service's report: status "ready", no on-device marker
+ * (localCheck), and the proxy's AI-checked mark. Then the card can be read as the final card.
+ */
+export async function waitForServiceReport(ext: Ext, tabId: number, timeout = 30_000): Promise<TabSnapshot> {
+  await expect
+    .poll(
+      async () => {
+        const s = await tabState(ext, tabId);
+        return s.status === "ready" && !s.localCheck && s.report?.stats?.usedLlm === true ? "service" : `${s.status}/${s.localCheck ?? "-"}`;
+      },
+      { timeout, message: `tab ${tabId}: final report from the service` },
+    )
+    .toBe("service");
+  return tabState(ext, tabId);
 }
 
 export async function badgeText(ext: Ext, tabId: number): Promise<string> {

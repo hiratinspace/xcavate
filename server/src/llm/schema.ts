@@ -17,7 +17,7 @@ const FINDING_CATEGORIES = CategorySchema.options.filter((c) => c !== "missing_p
 export const LLM_OUTPUT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["findings", "trial", "cancellation"],
+  required: ["findings", "rulesReview", "trial", "cancellation"],
   properties: {
     findings: {
       type: "array",
@@ -33,6 +33,22 @@ export const LLM_OUTPUT_JSON_SCHEMA = {
           costImpact: nullable(str),
           paragraphIndex: int,
           quote: str,
+        },
+      },
+    },
+    // Direction v3: the model's verdict on each rules candidate (validated and bounded by LlmRulesReviewSchema).
+    rulesReview: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["category", "action", "severity", "quote", "reason"],
+        properties: {
+          category: { type: "string", enum: FINDING_CATEGORIES },
+          action: { type: "string", enum: ["keep", "demote", "drop"] },
+          severity: nullable({ type: "string", enum: ["high", "medium", "low"] }),
+          quote: str,
+          reason: str,
         },
       },
     },

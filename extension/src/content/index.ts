@@ -5,12 +5,13 @@ import {
   type AnalyzeReply,
   type Message,
   type PageReadyReply,
+  type PageType,
 } from "@xcavate/shared/core";
 import type { DarkPatternFinding } from "@xcavate/shared/core";
 import { send } from "../lib/messaging";
 import { buildAnalyzeRequest } from "../lib/request";
 import { CARD_HOST_ID, Card } from "./card";
-import { classify } from "./classifier";
+import { classify, watchForLateQualify } from "./classifier";
 import { collectPolicies, waitForDomQuiet, type FetchedPage } from "./collect";
 import { DarkPatternMarkers, MARKS_HOST_ID, findDarkPatterns } from "./darkPatterns";
 import { extractLiveDocument } from "./extractor";
@@ -27,6 +28,9 @@ declare global {
     __xcavateLoaded?: boolean;
   }
 }
+
+/** No result after this long, but some policy pages arrived: show an on-device verdict from those. */
+export const EARLY_VERDICT_MS = 3_000;
 
 export const SCAN_REFUSED =
   "This looks like a checkout page, so Xcavate won't send its text (it can hold your name, address and order). Open the policy page itself and scan there.";
@@ -49,6 +53,8 @@ export function startContent(win: Window = window): void {
   const policyCache = new Map<string, FetchedPage | undefined>();
   /** Page URL whose policies were analysed; a re-run on the same URL (form count changed) skips that work. */
   let analyzedFor = "";
+  /** Page (origin + path) this script's card is showing checking or a verdict for; "" when none. */
+  let activePage = "";
 
   const clearMarkers = () => {
     markers?.destroy();
@@ -72,40 +78,94 @@ export function startContent(win: Window = window): void {
     publish(hits.map((h) => h.finding));
   };
 
+  const hideCard = () => {
+    card.hide();
+    activePage = "";
+  };
+
+  /**
+   * Collects the policies. If that takes longer than EARLY_VERDICT_MS and some policy pages already
+   * arrived, the worker's on-device rules give a first verdict from those (nothing is sent anywhere);
+   * the full request still goes out when every fetch has finished or timed out.
+   */
+  const collect = async (my: number, url: string, pageKey: string, pageType: PageType) => {
+    let done = false;
+    const full = collectPolicies(doc, url, pageType, { settle: () => waitForDomQuiet(doc), cache: policyCache }).finally(() => {
+      done = true;
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const early = new Promise<"early">((r) => (timer = setTimeout(() => r("early"), EARLY_VERDICT_MS)));
+    const first = await Promise.race([full.then(() => "done" as const, () => "done" as const), early]);
+    clearTimeout(timer);
+    if (first === "early" && my === gen && !dismissed && card.current === "checking") {
+      // Same finder, but only pages already fetched (pending ones count as not read yet).
+      const partial = await collectPolicies(doc, url, pageType, { fetchHtml: async (u) => policyCache.get(u) }).catch(() => undefined);
+      const some = partial?.policies.some((p) => p.text) && partial.policies.some((p) => !p.text);
+      if (partial && some && !done && my === gen) {
+        const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request: partial, page: pageKey, preliminary: true });
+        if (res?.ok && res.report && !done && my === gen && !dismissed && card.current === "checking") card.showReport(res.report);
+      }
+    }
+    return full;
+  };
+
+  /** Stops the late re-classify watcher (hydrated SPAs) of the previous "none" run. */
+  let stopLateQualify: (() => void) | undefined;
+  /** Page (without hash) that already had its one bounded late re-check, so re-runs can't chain watchers. */
+  let lateWatchedFor = "";
+
   const run = async () => {
     const my = ++gen;
+    stopLateQualify?.();
+    stopLateQualify = undefined;
     const url = win.location.href;
+    const pageKey = stripPageUrl(url);
     const cls = classify(doc, url);
-    const reply = await send<PageReadyReply>({ type: MSG.PAGE_READY, pageType: cls.pageType, score: cls.score, url: stripPageUrl(url) });
+    const reply = await send<PageReadyReply>({ type: MSG.PAGE_READY, pageType: cls.pageType, score: cls.score, url: pageKey });
     if (my !== gen) return;
     if (!reply || reply.paused || cls.pageType === "none") {
-      card.hide();
+      hideCard();
       clearMarkers();
+      // A hydrated app may render its checkout or pricing table later: re-classify (bounded, read-only).
+      if (reply && !reply.paused && cls.pageType === "none") {
+        const base = url.split("#")[0];
+        if (lateWatchedFor === base) return;
+        lateWatchedFor = base;
+        stopLateQualify = watchForLateQualify(win, () => {
+          if (my === gen && win.location.href.split("#")[0] === base) safeRun();
+        });
+      }
       return;
     }
     dismissed = !!reply.dismissed;
+    activePage = pageKey;
     if (!dismissed) {
       if (reply.report) card.showReport(reply.report);
       else card.showChecking(domainOf(url));
     }
     runLocalChecks();
-    const pageKey = stripPageUrl(url);
     if (analyzedFor === pageKey && reply.report) return; // same page, already analysed: local checks were enough
 
     try {
-      const request = await collectPolicies(doc, url, cls.pageType, { settle: () => waitForDomQuiet(doc), cache: policyCache });
+      const request = await collect(my, url, pageKey, cls.pageType);
       if (my !== gen) return;
-      const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request, page: pageKey });
+      const msg = { type: MSG.ANALYZE, request, page: pageKey } as const;
+      let res = await send<AnalyzeReply>(msg);
+      // No reply at all: Chrome stopped the worker mid-analysis. Ask the new worker once.
+      if (res === undefined && my === gen) res = await send<AnalyzeReply>(msg);
       if (my !== gen) return;
       if (res?.ok && res.report) {
         analyzedFor = pageKey;
         if (!dismissed) card.showReport(res.report);
-      } else if (!reply.report) {
-        card.hide(); // backend down or failed: silent, the page is unaffected
+      } else {
+        // Still no worker: let the next one close the tab's "checking" with what it has.
+        if (res === undefined) void send({ type: MSG.STATUS, status: "error" });
+        // Keep a verdict already on the card (on-device or cached); otherwise stay silent.
+        if (card.current !== "report") hideCard();
       }
     } catch {
       // Anything unexpected after PAGE_READY: tell the service worker so the tab leaves "checking".
-      if (my === gen && !reply.report) card.hide();
+      if (my === gen && card.current !== "report") hideCard();
       void send({ type: MSG.STATUS, status: "error" });
     }
   };
@@ -116,6 +176,7 @@ export function startContent(win: Window = window): void {
     const url = win.location.href;
     dismissed = false;
     void send({ type: MSG.SET_DISMISSED, dismissed: false });
+    activePage = stripPageUrl(url);
     card.showChecking(domainOf(url));
     const ex = extractLiveDocument(doc, [CARD_HOST_ID, MARKS_HOST_ID]);
     const request = buildAnalyzeRequest({
@@ -128,7 +189,7 @@ export function startContent(win: Window = window): void {
     const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request, page: stripPageUrl(url) });
     if (my !== gen) return;
     if (res?.ok && res.report) card.showReport(res.report);
-    else card.hide();
+    else hideCard();
   };
 
   chrome.runtime.onMessage.addListener((msg: Message, _sender, sendResponse) => {
@@ -140,17 +201,22 @@ export function startContent(win: Window = window): void {
           return false;
         }
         void scan().catch(() => {
-          card.hide();
+          hideCard();
           void send({ type: MSG.STATUS, status: "error" });
         });
         sendResponse({ ok: true });
         return false;
       }
-      case MSG.REPORT:
-        if (!dismissed) card.showReport(msg.report);
+      case MSG.REPORT: {
+        // Only for the page on screen, and only while this run is still checking or showing a verdict
+        // for it: a late reply after the shopper moved on (or closed the card) is dropped.
+        const here = stripPageUrl(win.location.href);
+        const live = card.current === "checking" || card.current === "report";
+        if (!dismissed && live && msg.page === here && msg.page === activePage) card.showReport(msg.report);
         return false;
+      }
       case MSG.STATUS:
-        if (msg.status === "error" && card.current === "checking") card.hide();
+        if (msg.status === "error" && card.current === "checking") hideCard();
         return false;
       case MSG.PING:
         sendResponse({ ok: true });
@@ -161,7 +227,7 @@ export function startContent(win: Window = window): void {
 
   const safeRun = () =>
     void run().catch(() => {
-      card.hide();
+      hideCard();
       void send({ type: MSG.STATUS, status: "error" });
     });
   watchNavigation(win, safeRun);

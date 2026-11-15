@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Plans | Boxly (fictional)</title><style>body{margin:0;font:16px/1.5 system-ui,sans-serif;color:#1d1d1f;background:#fafafa}header,footer{background:#222;color:#fff;padding:14px 24px}header a,footer a{color:#fff;margin-right:16px}main{max-width:980px;margin:32px auto;padding:0 20px}.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}.tier{background:#fff;border:1px solid #ddd;border-radius:10px;padding:20px}.price{font-size:28px;font-weight:700}.btn{display:inline-block;background:#3346d3;color:#fff;border-radius:8px;padding:10px 18px;text-decoration:none}</style></head>
+<body>
+  <!-- Real-world pattern: a client-rendered pricing page (Dropbox-like). At document_idle the page is an
+       empty shell; the pricing table renders 1.5 s later. Classifies "none" at load and qualifies once the
+       DOM is quiet (watchForLateQualify). The template holds the rendered markup for jsdom tests. -->
+  <header><strong>Boxly</strong></header>
+  <main id="app"><p>Loading…</p></main>
+  <template id="rendered">
+    <h1>Find your plan</h1>
+    <div class="tiers">
+      <div class="tier"><h2>Plus</h2><p class="price">US$11.99/month</p><p>Billed yearly</p><a class="btn" href="/buy?plan=plus">Try for free</a></div>
+      <div class="tier"><h2>Essentials</h2><p class="price">US$19.99/month</p><p>Billed yearly</p><a class="btn" href="/buy?plan=essentials">Try for free</a></div>
+    </div>
+  </template>
+  <footer><a href="/terms">Terms</a><a href="/privacy">Privacy</a><span>Boxly is fictional, for testing only.</span></footer>
+  <script>
+    setTimeout(function () {
+      var app = document.getElementById("app");
+      app.replaceChildren(document.getElementById("rendered").content.cloneNode(true));
+    }, 1500);
+  </script>
+</body>
+</html>

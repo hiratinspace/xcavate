@@ -22,10 +22,16 @@ export type Message =
   /**
    * `page` is the query-less address of the page the request was made for. It stays inside the
    * extension (late-reply check); only `request` is sent to the backend, whose pageUrl is origin + "/" (V-11).
+   * `preliminary`: some policy pages are still loading; run the on-device rules over what arrived
+   * (never sent anywhere) so the card shows a first verdict early. A full ANALYZE follows.
    */
-  | ({ type: "ANALYZE" } & { request: AnalyzeRequest; page?: string })
+  | ({ type: "ANALYZE" } & { request: AnalyzeRequest; page?: string; preliminary?: boolean })
   | { type: "LOCAL_FINDINGS"; fees?: FeeSummary; darkPatterns?: DarkPatternFinding[] }
-  | { type: "REPORT"; report: Report }
+  /**
+   * bg → content. `page` is the query-less address the report was made for; the content script
+   * drops a report for any other page (a late reply after the shopper moved on).
+   */
+  | { type: "REPORT"; report: Report; page: string }
   | { type: "SCAN_CURRENT_PAGE" }
   | { type: "GET_STATE"; tabId: number }
   | { type: "SCAN_TAB"; tabId: number }

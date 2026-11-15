@@ -91,3 +91,8 @@ export function windowAround(s: string, start: number, end: number, max: number)
   }
   return s.slice(a, b).trim();
 }
+
+/** Number of whitespace-separated words. */
+export function wordsIn(s: string): number {
+  return s.trim().split(/\s+/).filter(Boolean).length;
+}

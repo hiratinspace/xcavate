@@ -9,20 +9,35 @@ import { join, resolve } from "node:path";
  * Test servers for the e2e run.
  *
  *   :4000 / :4001  fixtures/server.mjs (the store URLs inside the fixtures assume these ports)
- *   :8787          a request-counting proxy (the extension's default apiBase)
- *   :8788          the real backend (mock LLM, temp DB), reached only through the proxy
+ *   :18787         a request-counting proxy; the harness points the extension's apiBase here
+ *                  (chrome.storage settings) before any page loads, so :8787 stays free for
+ *                  `npm run dev:server`
+ *   :18788         the real backend (mock LLM, temp DB), reached only through the proxy
  *
  * The proxy is how the specs see what the service worker sends to the backend: every request
  * (including 404 report lookups, which the backend does not log) is recorded with its method,
- * path and domain. Stopping the proxy and the backend makes :8787 refuse connections, which is
- * what the extension sees when the real service is down.
+ * path and domain. It also plays the service the shopper would really use (see ProxyMode):
+ *   "model"     the default. The backend runs the mock (the same rules engine as the extension),
+ *               so the proxy marks its reports as AI-checked (stats.usedLlm = true) and /healthz
+ *               says a model runs. That makes the backend's report distinguishable from the
+ *               on-device one (always usedLlm false), without changing product code.
+ *   "rulesOnly" reports pass through untouched (usedLlm false) while /healthz still says a model
+ *               runs: what the extension sees when the model timed out and the server fell back.
+ *   "down"      every request is counted and answered 503: the service is unreachable.
+ *
+ * E2E_REUSE_FIXTURES=1 reuses fixture stores already running on :4000/:4001 (read-only: the
+ * specs never switch fixture versions) instead of failing when those ports are busy.
  */
 
 export const ROOT = resolve(import.meta.dirname, "../..");
 export const FIXTURE_PORT = 4000;
 export const LEGAL_PORT = 4001;
-export const API_PORT = 8787;
-export const BACKEND_PORT = Number(process.env.E2E_BACKEND_PORT ?? 8788);
+export const API_PORT = Number(process.env.E2E_API_PORT ?? 18787);
+export const BACKEND_PORT = Number(process.env.E2E_BACKEND_PORT ?? 18788);
+export const API_BASE = `http://localhost:${API_PORT}`;
+const REUSE_FIXTURES = process.env.E2E_REUSE_FIXTURES === "1";
+
+export type ProxyMode = "model" | "rulesOnly" | "down";
 
 export interface ApiCall {
   method: string;
@@ -33,26 +48,53 @@ export interface ApiCall {
   at: number;
 }
 
+/** Something accepts connections on host:port. */
+function answers(port: number, host: string): Promise<boolean> {
+  return new Promise((done) => {
+    const c = net.connect({ port, host });
+    const end = (v: boolean) => {
+      c.destroy();
+      done(v);
+    };
+    c.setTimeout(1_000, () => end(false));
+    c.once("connect", () => end(true));
+    c.once("error", () => end(false));
+  });
+}
+
+/**
+ * Busy if anything listens on the port. Binding 127.0.0.1 alone is not enough: on macOS that
+ * succeeds even while another process holds the IPv6 wildcard (*:4000), which is how
+ * `npm run dev:fixtures` listens, and the specs would then silently talk to that server.
+ */
 async function portBusy(port: number): Promise<boolean> {
+  if ((await answers(port, "127.0.0.1")) || (await answers(port, "::1"))) return true;
   return new Promise((done) => {
     const s = net.createServer();
     s.once("error", () => done(true));
     s.once("listening", () => s.close(() => done(false)));
-    s.listen(port, "127.0.0.1");
+    s.listen(port);
   });
 }
 
-export async function assertPortsFree(): Promise<void> {
+/** Ports to check; returns true when running fixture stores should be reused instead of started. */
+export async function assertPortsFree(): Promise<boolean> {
+  const fixturesBusy = (await portBusy(FIXTURE_PORT)) || (await portBusy(LEGAL_PORT));
+  const reuse = fixturesBusy && REUSE_FIXTURES;
+  const ports = reuse ? [API_PORT, BACKEND_PORT] : [FIXTURE_PORT, LEGAL_PORT, API_PORT, BACKEND_PORT];
   const busy: number[] = [];
-  for (const p of [FIXTURE_PORT, LEGAL_PORT, API_PORT, BACKEND_PORT]) if (await portBusy(p)) busy.push(p);
+  for (const p of ports) if (await portBusy(p)) busy.push(p);
   if (busy.length) {
+    const fixtureHint = busy.some((p) => p === FIXTURE_PORT || p === LEGAL_PORT)
+      ? ` The fixture stores hard-code :${FIXTURE_PORT}/:${LEGAL_PORT}: stop \`npm run dev:fixtures\`, or set E2E_REUSE_FIXTURES=1 to use the running stores.`
+      : "";
     throw new Error(
-      `e2e needs ports ${[FIXTURE_PORT, LEGAL_PORT, API_PORT, BACKEND_PORT].join(", ")} free, but ${busy.join(", ")} ` +
-        `${busy.length > 1 ? "are" : "is"} in use. Stop \`npm run dev:fixtures\` / \`npm run dev:server\` (or whatever holds them: ` +
-        `\`lsof -nP -iTCP:${busy[0]} -sTCP:LISTEN\`) and run again. The fixture stores hard-code :4000/:4001 and the ` +
-        `extension's default service address is http://localhost:8787.`,
+      `e2e needs ports ${ports.join(", ")} free, but ${busy.join(", ")} ${busy.length > 1 ? "are" : "is"} in use ` +
+        `(see \`lsof -nP -iTCP:${busy[0]} -sTCP:LISTEN\`).${fixtureHint} The proxy and backend ports can be moved with ` +
+        `E2E_API_PORT / E2E_BACKEND_PORT.`,
     );
   }
+  return reuse;
 }
 
 async function waitForHttp(url: string, child: ChildProcess, name: string, timeoutMs = 30_000): Promise<void> {
@@ -86,6 +128,8 @@ function stopChild(child: ChildProcess | undefined): Promise<void> {
 
 export class Servers {
   calls: ApiCall[] = [];
+  /** How the proxy answers (see ProxyMode). */
+  mode: ProxyMode = "model";
   private fixtures?: ChildProcess;
   private backend?: ChildProcess;
   private proxy?: http.Server;
@@ -94,8 +138,13 @@ export class Servers {
   backendLog = "";
 
   async start(): Promise<void> {
-    await assertPortsFree();
-    await this.startFixtures();
+    const reuse = await assertPortsFree();
+    if (reuse) {
+      const r = await fetch(`http://localhost:${FIXTURE_PORT}/__state`).catch(() => undefined);
+      if (!r?.ok) throw new Error(`E2E_REUSE_FIXTURES=1 but :${FIXTURE_PORT} is not the fixture server (no /__state)`);
+      const state = (await r.json()) as { streamnest?: number };
+      if (state.streamnest !== 1) throw new Error("the running fixture server is on StreamNest v" + state.streamnest + "; the specs expect v1");
+    } else await this.startFixtures();
     await this.startBackend();
   }
 
@@ -151,12 +200,40 @@ export class Servers {
           }
         }
         this.calls.push(call);
+        const mode = this.mode;
+        if (mode === "down") {
+          call.status = 503;
+          res.writeHead(503, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "unavailable" }));
+          return;
+        }
         const up = http.request(
           { host: "127.0.0.1", port: BACKEND_PORT, method: req.method, path: req.url, headers: req.headers },
           (ur) => {
             call.status = ur.statusCode;
-            res.writeHead(ur.statusCode ?? 502, ur.headers);
-            ur.pipe(res);
+            const rewrite = url.pathname === "/healthz" || (url.pathname === "/v1/analyze" && mode === "model");
+            if (!rewrite || ur.statusCode !== 200) {
+              res.writeHead(ur.statusCode ?? 502, ur.headers);
+              ur.pipe(res);
+              return;
+            }
+            const parts: Buffer[] = [];
+            ur.on("data", (c) => parts.push(c));
+            ur.on("end", () => {
+              let out = Buffer.concat(parts).toString("utf8");
+              try {
+                const j = JSON.parse(out);
+                // The service the extension talks to runs a model; its analyze reports are AI-checked.
+                if (url.pathname === "/healthz") j.llm = "anthropic";
+                else j.stats = { ...j.stats, usedLlm: true };
+                out = JSON.stringify(j);
+              } catch {
+                /* pass through */
+              }
+              const headers = { ...ur.headers, "content-length": String(Buffer.byteLength(out)) };
+              res.writeHead(200, headers);
+              res.end(out);
+            });
           },
         );
         up.on("error", () => {
@@ -189,6 +266,11 @@ export class Servers {
     }
     await stopChild(this.backend);
     this.backend = undefined;
+  }
+
+  /** Every proxied call to the backend's API (report lookups, analyze, health) from index `from` on. */
+  apiCalls(from = 0): ApiCall[] {
+    return this.calls.slice(from);
   }
 
   analyzeCalls(target?: string): ApiCall[] {

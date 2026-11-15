@@ -31,11 +31,22 @@ import {
 import type { Corpus } from "./ground.js";
 import { prefilter } from "./prefilter.js";
 import { bestPerCategory, offersOnlineCancel, runRules, statesNoReminder } from "./rules.js";
-import { MISSING_POLICY_FLAG, applyCaps, computeVerdict, needsMissingPolicy, recalibrate, sortFlags } from "./score.js";
+import type { RuleCategory } from "./rules.js";
+import {
+  MISSING_POLICY_FLAG,
+  applyCaps,
+  capByText,
+  computeVerdict,
+  coversMoneyTopics,
+  needsMissingPolicy,
+  recalibrate,
+  sortFlags,
+} from "./score.js";
+import { isBusinessDocument } from "./scope.js";
 import { rightsNotes, withRightsNotes } from "./rights.js";
 import { splitParagraphs } from "./split.js";
 import type { Paragraph } from "./split.js";
-import { clip, clipWords } from "./textutil.js";
+import { clip, clipWords, wordsIn } from "./textutil.js";
 import { locateQuote, prepareForVerify, verifyQuote } from "./verify.js";
 import type { VerifiablePolicy } from "./verify.js";
 
@@ -51,6 +62,11 @@ export interface LlmPolicyInput {
   kind: PolicyKind;
   /** `id` is unique across the whole request, so findings can be mapped back to a policy. */
   paragraphs: { id: number; text: string }[];
+  /**
+   * The rules engine's candidate flags in this policy (best per category), for the model to review
+   * (direction v3). `paragraphId` is one of `paragraphs[].id`; `quote` is policy text (untrusted).
+   */
+  candidates?: { category: RuleCategory; severity: Flag["severity"]; paragraphId: number; quote: string }[];
 }
 
 export interface Prepared {
@@ -69,6 +85,17 @@ export interface Analysis {
   policies: PolicyMeta[];
   droppedUnverified: number;
   usedLlm: boolean;
+  /**
+   * The in-scope analysed text covers money topics (a refund or subscription policy, or enough
+   * billing/refund/renewal language). False keeps the verdict from going green. Missing in
+   * analyses cached before direction v3 (then the kind-only rule applies).
+   */
+  moneyCovered?: boolean;
+}
+
+/** A readable policy written for consumers (business-customer contracts are out of scope, see scope.ts). */
+export function inScope(p: Prepared): boolean {
+  return p.readable && !isBusinessDocument(p.input.url, p.text);
 }
 
 export async function preparePolicy(p: PolicyInput): Promise<Prepared> {
@@ -92,21 +119,36 @@ export interface ModelPlan {
   count: number;
 }
 
-/** Prefilter decides what the model sees. Paragraph ids are unique across the request. */
+/**
+ * Prefilter decides what the model sees. Paragraph ids are unique across the request. Business
+ * contracts are left out. The rules engine's best candidate per category is attached for review,
+ * and its paragraph is always included so the model can judge it in context.
+ */
 export function planModelInput(prepared: Prepared[]): ModelPlan {
-  const readable = prepared.map((p, i) => ({ p, i })).filter((x) => x.p.readable);
+  const readable = prepared.map((p, i) => ({ p, i })).filter((x) => inScope(x.p));
   const { kept } = prefilter(readable.map((x) => ({ paragraphs: x.p.paragraphs })));
   const idMap: IdMap = new Map();
   let nextId = 0;
-  const input: LlmPolicyInput[] = readable.map(({ p, i }, r) => ({
-    url: p.input.url,
-    kind: p.input.kind,
-    paragraphs: kept[r].map((para) => {
+  const input: LlmPolicyInput[] = readable.map(({ p, i }, r) => {
+    const best = bestPerCategory(runRules(p.paragraphs));
+    const paras = [...kept[r]];
+    for (const h of best) {
+      if (!paras.some((x) => x.index === h.paragraphIndex)) {
+        const para = p.paragraphs.find((x) => x.index === h.paragraphIndex);
+        if (para) paras.push(para);
+      }
+    }
+    paras.sort((a, b) => a.index - b.index);
+    const idOf = new Map<number, number>();
+    const paragraphs = paras.map((para) => {
       const id = nextId++;
       idMap.set(id, { policy: i, paragraphIndex: para.index });
+      idOf.set(para.index, id);
       return { id, text: para.text };
-    }),
-  }));
+    });
+    const candidates = best.map((h) => ({ category: h.category, severity: h.severity, paragraphId: idOf.get(h.paragraphIndex) ?? -1, quote: h.quote }));
+    return { url: p.input.url, kind: p.input.kind, paragraphs, ...(candidates.length ? { candidates } : {}) };
+  });
   return { input: input.filter((p) => p.paragraphs.length > 0), idMap, count: nextId };
 }
 
@@ -121,6 +163,8 @@ interface Candidate {
   paragraphIndex: number;
   /** False when the model's title/summary made a safety claim or named amounts/contacts not in the text. */
   trusted: boolean;
+  /** Rules only: see RuleHit.firm. */
+  firm?: boolean;
 }
 
 async function toFlag(c: Candidate, prepared: Prepared[], source: Flag["source"]): Promise<Flag> {
@@ -139,11 +183,69 @@ async function toFlag(c: Candidate, prepared: Prepared[], source: Flag["source"]
   return flag;
 }
 
+function quotesOverlap(a: string, b: string): boolean {
+  const x = normalizeForMatch(a);
+  const y = normalizeForMatch(b);
+  return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
+}
+
 function overlaps(a: Candidate, b: Candidate): boolean {
   if (a.policy === b.policy && a.paragraphIndex === b.paragraphIndex) return true;
-  const x = normalizeForMatch(a.quote);
-  const y = normalizeForMatch(b.quote);
-  return x.includes(y) || y.includes(x);
+  return quotesOverlap(a.quote, b.quote);
+}
+
+const lowerOf = (s: Flag["severity"]): Flag["severity"] => (s === "high" ? "medium" : "low");
+const maxSev = (a: Flag["severity"], b: Flag["severity"]) => (SEVERITY_RANK[a] >= SEVERITY_RANK[b] ? a : b);
+
+/**
+ * How far the model may lower a rules severity: to `to`, but a firm clause (whole-purchase no
+ * refund, early termination fee) at most one level. Never raises.
+ */
+function demoted(r: Candidate, to: Flag["severity"]): Flag["severity"] {
+  const floor = r.firm ? lowerOf(r.severity) : "low";
+  const target = maxSev(to, floor);
+  return SEVERITY_RANK[target] < SEVERITY_RANK[r.severity] ? target : r.severity;
+}
+
+type Review = NonNullable<LlmOutput["rulesReview"]>[number];
+
+/**
+ * Apply the model's reviews of rules candidates (direction v3). A review counts only when its quote
+ * (5+ words) verifies in the same policy as the rules clause AND addresses that clause: same
+ * paragraph, or the quotes overlap. "drop" removes a rules clause the model judged not applicable;
+ * a firm clause is only demoted one level instead. "demote" lowers to the stated severity (one level
+ * when none is given), with the same floor for firm clauses. Reviews never raise severity. `reason`
+ * is never shown. Returns the surviving candidates and how many reviews changed something.
+ */
+function applyReviews(cands: Candidate[], reviews: Review[], verifiable: VerifiablePolicy[]): { cands: Candidate[]; applied: number } {
+  let out = cands;
+  let applied = 0;
+  for (const rv of reviews) {
+    if (rv.action === "keep") continue;
+    const quote = clip(unsanitize(rv.quote).trim(), LIMITS.maxQuoteChars);
+    if (wordsIn(quote) < 5) continue;
+    let changed = false;
+    const next: Candidate[] = [];
+    for (const r of out) {
+      if (r.category !== rv.category) {
+        next.push(r);
+        continue;
+      }
+      const loc = locateQuote(quote, verifiable, r.policy, r.paragraphIndex);
+      const addresses = loc !== null && loc.policy === r.policy && (loc.paragraphIndex === r.paragraphIndex || quotesOverlap(quote, r.quote));
+      if (!addresses) {
+        next.push(r);
+        continue;
+      }
+      changed = true;
+      if (rv.action === "drop" && !r.firm) continue;
+      const to = rv.action === "drop" ? lowerOf(r.severity) : rv.severity && SEVERITY_RANK[rv.severity] < SEVERITY_RANK[r.severity] ? rv.severity : lowerOf(r.severity);
+      next.push({ ...r, severity: demoted(r, to) });
+    }
+    if (changed) applied++;
+    out = next;
+  }
+  return { cands: out, applied };
 }
 
 const SUBSCRIPTION_CATEGORIES: Category[] = ["auto_renewal", "trial_converts", "cancellation_friction", "termination_fee"];
@@ -163,18 +265,21 @@ export interface ModelAnswer {
  */
 export async function analyzePrepared(prepared: Prepared[], model: ModelAnswer = { isModel: false }): Promise<Analysis> {
   const { out, idMap = new Map(), isModel } = model;
-  const readable = prepared.map((p, i) => ({ p, i })).filter((x) => x.p.readable);
+  // Business-customer contracts are read but never produce consumer findings (scope.ts).
+  const readable = prepared.map((p, i) => ({ p, i })).filter((x) => inScope(x.p));
   const texts = readable.map(({ p }) => p.text);
   const cx: Corpus = corpus(texts);
+  const verifiable: VerifiablePolicy[] = prepared.map((p) => prepareForVerify(p.text, p.paragraphs));
 
-  // Rules over every paragraph (cheap, and not limited by the prefilter budget).
-  const ruleCands: Candidate[] = readable.flatMap(({ p, i }) =>
+  // Rules over every paragraph (cheap, and not limited by the prefilter budget), then the model's
+  // review of them, when it gave one.
+  const allRuleCands: Candidate[] = readable.flatMap(({ p, i }) =>
     runRules(p.paragraphs).map((h) => ({ ...h, policy: i, trusted: true })),
   );
+  const { cands: ruleCands } = isModel ? applyReviews(allRuleCands, out?.rulesReview ?? [], verifiable) : { cands: allRuleCands };
 
   // Verify every model quote: in one paragraph of the real text, at least 5 words, and actually
   // evidence for its category (a non-negated keyword). Drop what fails.
-  const verifiable: VerifiablePolicy[] = prepared.map((p) => prepareForVerify(p.text, p.paragraphs));
   let droppedUnverified = 0;
   const llmCands: Candidate[] = [];
   for (const f of out?.findings ?? []) {
@@ -185,6 +290,7 @@ export async function analyzePrepared(prepared: Prepared[], model: ModelAnswer =
       droppedUnverified++;
       continue;
     }
+    if (!inScope(prepared[loc.policy])) continue;
     const trusted = textGrounded([f.title, f.summary], cx);
     const tpl = templateText(f.category);
     const cost = f.costImpact && !hasSafetyClaim(f.costImpact) && moneyGrounded(f.costImpact, cx) ? f.costImpact : undefined;
@@ -201,9 +307,20 @@ export async function analyzePrepared(prepared: Prepared[], model: ModelAnswer =
     });
   }
 
-  // Merge: one flag per category. Overlapping quotes become source "both"; a rules flag is
-  // never removed because the model stayed silent, and severity takes the higher of the two.
-  // Untrusted model wording yields to the rules wording.
+  /*
+   * Merge (direction v3): the model is a checker of the rules, not a silent veto.
+   * - Model silent on a category: the rules flag stays as it is (a model that misses a clause
+   *   cannot remove it).
+   * - Model reviewed a rules clause (applyReviews above): a verified "drop" removes it, a verified
+   *   "demote" lowers it; firm clauses (all sales final, non-refundable purchase, early termination
+   *   fee) are at most demoted one level, never removed.
+   * - Model found the same clause (overlapping quote or same paragraph): a lower model severity
+   *   demotes the rules flag (same floor for firm clauses); a higher one raises it, since every model
+   *   finding here already carries a verified quote. The flag becomes source "both".
+   * - Different clauses in one category: the more severe flag wins.
+   * Afterwards code decides again: severity caps, text caps (capByText) and the V-01 recalibration
+   * apply to every flag whoever proposed it. Untrusted model wording yields to the rules wording.
+   */
   const rulesBest = bestPerCategory(ruleCands);
   const llmBest = bestPerCategory(llmCands);
   const flags: Flag[] = [];
@@ -212,7 +329,8 @@ export async function analyzePrepared(prepared: Prepared[], model: ModelAnswer =
     const r = rulesBest.find((c) => c.category === cat);
     const l = llmBest.find((c) => c.category === cat);
     if (r && l) {
-      const severity = SEVERITY_RANK[r.severity] > SEVERITY_RANK[l.severity] ? r.severity : l.severity;
+      const severity =
+        isModel && SEVERITY_RANK[l.severity] < SEVERITY_RANK[r.severity] && overlaps(r, l) ? demoted(r, l.severity) : maxSev(r.severity, l.severity);
       const words = l.trusted ? l : r;
       if (overlaps(r, l))
         flags.push(
@@ -230,7 +348,9 @@ export async function analyzePrepared(prepared: Prepared[], model: ModelAnswer =
   // V-01: renewal and trial severity follow the whole document (online cancel path, harsh
   // cancellation, reminders, price rises), decided in code for rules and model flags alike.
   const allParas = readable.flatMap(({ p }) => p.paragraphs);
-  const capped = applyCaps(flags);
+  const paraText = (f: Flag) =>
+    prepared.find((p) => p.input.url === f.policyUrl)?.paragraphs.find((x) => x.index === f.paragraphIndex)?.text ?? f.quote;
+  const capped = applyCaps(flags).map((f) => capByText(f, paraText(f)));
   const calibrated = recalibrate(capped, {
     onlineCancel: offersOnlineCancel(allParas),
     harshCancel: capped.some((f) => f.category === "cancellation_friction" && f.severity === "high"),
@@ -253,6 +373,7 @@ export async function analyzePrepared(prepared: Prepared[], model: ModelAnswer =
     policies: prepared.map(policyMeta),
     droppedUnverified,
     usedLlm: out !== undefined && isModel,
+    moneyCovered: readable.some(({ p }) => p.input.kind === "refund" || p.input.kind === "subscription" || coversMoneyTopics(p.text)),
   };
 }
 
@@ -333,7 +454,7 @@ export function finishReport(req: Pick<AnalyzeRequest, "pageUrl" | "pageType" | 
   return {
     schemaVersion: 1,
     domain: domainOf(req.pageUrl),
-    verdict: computeVerdict(flags, analyzedKinds),
+    verdict: computeVerdict(flags, analyzedKinds, analysis.moneyCovered),
     flags,
     ...(analysis.trial ? { trial: analysis.trial } : {}),
     ...(analysis.cancellation ? { cancellation: analysis.cancellation } : {}),

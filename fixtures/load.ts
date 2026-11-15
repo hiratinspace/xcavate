@@ -20,7 +20,23 @@ export const POLICY_PAGES: Record<Site, readonly string[]> = {
   shopapp: ["terms"],
 };
 
-export const ARTICLES = ["article-1", "article-2", "article-3"] as const;
+export const ARTICLES = ["article-1", "article-2", "article-3", "article-4"] as const;
+
+/**
+ * Direction v3: pages under fixtures/pages/ that copy the structure of real plan, sign-up and cart
+ * pages (no real text). `url` is the address the pattern lives at on a real site, used by tests
+ * because the classifier reads the path; `pageType` is what the classifier must say.
+ * `plans-hydrated` renders its pricing table 1.5 s after load (a client-rendered page).
+ */
+export const PATTERN_PAGES = {
+  "plans-saas": { url: "https://notely.example/pricing", pageType: "signup" },
+  "trial-stream": { url: "https://streamly.example/premium", pageType: "signup" },
+  "signup-steps": { url: "https://flickbox.example/signup/planform", pageType: "signup" },
+  "plans-hydrated": { url: "https://boxly.example/plans", pageType: "signup" },
+  "cart-empty": { url: "https://beanhouse.example/cart", pageType: "none" },
+  "docs-1": { url: "https://widgetkit.example/docs/fetching-data", pageType: "none" },
+  "article-4": { url: "https://ledger.example/2026/11/streaming-prices", pageType: "none" },
+} as const;
 
 /** Pages whose canonical URL is on the cross-origin legal host (port 4001). */
 const LEGAL_HOSTED: Partial<Record<Site, readonly string[]>> = { streamnest: ["terms"] };

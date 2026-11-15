@@ -136,7 +136,7 @@ describe("V-02 partly read", () => {
   });
 
   it("a manual scan (kind other) counts as terms-like -> green", async () => {
-    const r = await run("", { pageType: "none", linksFound: 0, policies: [{ url: "https://shop.example.com/help", kind: "other", text: policyText("We love dogs.") }] });
+    const r = await run("", { pageType: "none", linksFound: 0, policies: [{ url: "https://shop.example.com/help", kind: "other", text: policyText("We love dogs. You can return any item within 60 days for a full refund.") }] });
     expect(r.verdict).toBe("green");
   });
 

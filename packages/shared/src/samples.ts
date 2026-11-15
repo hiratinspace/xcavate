@@ -72,8 +72,8 @@ export const SAMPLE_REPORT_RED: Report = {
     quote: "Cancellations must be made by telephone at 1-800-555-0199 and require at least 30 days' notice before your next billing date.",
   },
   policies: [
-    { url: STREAMNEST_SUB, kind: "subscription", textHash: "a".repeat(64), status: "analyzed" },
-    { url: STREAMNEST_TERMS, kind: "terms", textHash: "b".repeat(64), status: "analyzed" },
+    { url: STREAMNEST_SUB, kind: "subscription", textHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", status: "analyzed" },
+    { url: STREAMNEST_TERMS, kind: "terms", textHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", status: "analyzed" },
   ],
   stats: { droppedUnverified: 1, usedLlm: true, ms: 2140 },
   cached: false,
@@ -86,8 +86,8 @@ export const SAMPLE_REPORT_GREEN: Report = {
   verdict: "green",
   flags: [],
   policies: [
-    { url: "http://fairbox.localhost:4000/refunds", kind: "refund", textHash: "c".repeat(64), status: "analyzed" },
-    { url: "http://fairbox.localhost:4000/terms", kind: "terms", textHash: "d".repeat(64), status: "analyzed" },
+    { url: "http://fairbox.localhost:4000/refunds", kind: "refund", textHash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", status: "analyzed" },
+    { url: "http://fairbox.localhost:4000/terms", kind: "terms", textHash: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", status: "analyzed" },
   ],
   stats: { droppedUnverified: 0, usedLlm: true, ms: 1830 },
   cached: false,

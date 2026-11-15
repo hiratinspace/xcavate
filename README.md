@@ -12,7 +12,7 @@ The terms checker that can't make up a warning: every warning it shows quotes th
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3C5058?logo=typescript&logoColor=white)
 ![Node 22+](https://img.shields.io/badge/Node-22%2B-8A6A52?logo=nodedotjs&logoColor=white)
 ![Claude Sonnet 5.5](https://img.shields.io/badge/model-Claude%20Sonnet%205.5-B48E6B)
-![Tests](https://img.shields.io/badge/tests-578%20unit%20%2B%209%20e2e-5B7B5A)
+![Tests](https://img.shields.io/badge/tests-705%20unit%20%2B%2011%20e2e-5B7B5A)
 ![Privacy](https://img.shields.io/badge/form%20data-never%20read-1E2B30)
 
 [What it does](#what-it-does) · [See it](#see-it) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Privacy](#privacy-and-security) · [Contributing](#contributing)
@@ -60,7 +60,9 @@ Fee and add-on checks run inside the page. Form contents are never read. The ext
 | **Cancellation helper** | Method, steps, notice period and contact, plus an email draft you send yourself. |
 | **Your rights note** | Phone-only cancellation for a subscription you can start online gets a short, sourced note about California law, worded as information. |
 | **Instant on-device verdict** | The rules engine runs in the extension, so a verdict appears at once. The AI check upgrades it when the backend answers, and can be turned off entirely. |
-| **Honest uncertainty** | If the terms or refund policy couldn't be read, the verdict is **Partly read**, never a false green. |
+| **Honest uncertainty** | If the terms or refund policy couldn't be read, or the pages read say nothing about billing or refunds, the verdict is **Partly read**, never a false green. If the AI check didn't run, the popup says so. |
+| **AI as a checker, not an oracle** | Claude reviews each rules finding and can keep, soften or drop it, but only with a verified quote from the same clause. Firm traps (all sales final, early termination fees) can't be erased. |
+| **Stays out of the way** | The card opens compact (verdict and one line, about 110 px tall), expands on demand, and can be moved to the other corner. |
 
 ## See it
 
@@ -68,7 +70,7 @@ Fee and add-on checks run inside the page. Form contents are never read. The ext
 <tr>
 <td align="center" valign="top" width="50%">
 <img src=".github/assets/card-trial.png" width="380" alt="Xcavate card on a checkout page: Read first. Free for 7 days, then $14.99/month from Sat, Nov 21, with a Remind me button, the quoted trial sentence and two more warnings">
-<br><sub><b>The card at checkout.</b> Trial charge date up front, the quoted sentence, a reminder button.</sub>
+<br><sub><b>The card at checkout, details expanded.</b> Trial charge date up front, the quoted sentence, a reminder button.</sub>
 <br><br>
 <img src=".github/assets/card-partial.png" width="380" alt="Xcavate card showing Partly read: no money traps in what we could read, but we couldn't read the terms or refund policy">
 <br><sub><b>Partly read.</b> When key pages can't be fetched, Xcavate says so instead of showing green.</sub>
@@ -212,21 +214,24 @@ sequenceDiagram
 
 ## Accuracy, honestly
 
-Measured on 2026-11-14 over 5 demo stores and 10 real-world policies from well-known streaming, subscription, retail and gym sites (texts kept locally, not in the repo).
+Measured on 2026-11-15 over 5 demo stores and 10 real-world policies from well-known streaming, subscription, retail and gym sites (texts kept locally, not in the repo). Model runs were repeated 3 times; results did not vary.
 
-| | Rules only (on device) | Rules + Haiku 5.5 | **Rules + Sonnet 5.5** (default) | Rules + Opus 5.5 |
-|---|---|---|---|---|
-| Demo store verdicts | 5 / 5 | 5 / 5 | **5 / 5** | 5 / 5 |
-| Real-world verdicts | 7 / 10 | 7 / 10 | **9 / 10** | 9 / 10 |
-| Real-world flag precision | 84% | 76% | **86%** | 76% |
-| Real-world flag recall | 80% | 95% | **95%** | 95% |
-| Model findings dropped by quote check | n/a | 14 / 31 | **12 / 28** | 12 / 33 |
-| Median analysis time (real-world) | instant | 4.3 s | **3.3 s** | 5.5 s |
+| | Rules only (on device) | **Rules + Claude Sonnet 5.5** (default) |
+|---|---|---|
+| Demo store verdicts | 5 / 5 | **5 / 5** |
+| Real-world flag precision | 95% | **91%** |
+| Real-world flag recall | 100% | **100%** |
+| Severity agrees with label | 75% | **75%** |
+| Real-world verdicts matching the draft labels | 6 / 10 | **6 / 10** |
+| Model findings dropped by quote check | n/a | 31% |
+| Analysis time p50 / p90 | instant | 2.7 s / 8.8 s |
 
-Adding the model lifts recall from 80% to 95%: it catches the clauses that keyword rules miss. Quote verification is doing real work: roughly 4 in 10 model findings are dropped because their quote didn't match the policy exactly, and none of those ever reach a shopper.
+**Why verdicts read 6 / 10.** All four disagreements are deliberate calls where the draft labels predate the current rubric: a "no refund for a partly used month" clause is now treated as normal for subscriptions (two streaming services move from red to yellow), a restocking fee that only applies to non-compliant returns at a free-returns store is low (yellow to green), and a generic terms page with no billing terms is **Partly read** instead of green. The labels are waiting for human review rather than being edited to match the system.
+
+Earlier model comparison on the previous rules version: Sonnet 5.5 beat Haiku 5.5 and Opus 5.5 on precision and speed, which is why it is the default.
 
 > [!IMPORTANT]
-> Small sample, provisional labels. The real-world labels were drafted by an AI agent and haven't been human-reviewed yet, and the rules were tuned while looking at those texts, so these are not held-out results. Run `npm run eval -- --compare` to reproduce.
+> Small sample, provisional labels. The labels were drafted by an AI agent and haven't been human-reviewed, and the rules were developed while looking at these texts, so these are not held-out results. Run `npm run eval -- --compare --runs 3` to reproduce.
 
 ## Project layout
 
