@@ -11,7 +11,7 @@ The terms checker that can't make up a warning: every warning it shows quotes th
 ![Chrome MV3](https://img.shields.io/badge/Chrome-Manifest%20V3-1E2B30?logo=googlechrome&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3C5058?logo=typescript&logoColor=white)
 ![Node 22+](https://img.shields.io/badge/Node-22%2B-8A6A52?logo=nodedotjs&logoColor=white)
-![Claude Haiku 5.5](https://img.shields.io/badge/model-Claude%20Haiku%205.5-B48E6B)
+![Claude Sonnet 5.5](https://img.shields.io/badge/model-Claude%20Sonnet%205.5-B48E6B)
 ![Tests](https://img.shields.io/badge/tests-578%20unit%20%2B%209%20e2e-5B7B5A)
 ![Privacy](https://img.shields.io/badge/form%20data-never%20read-1E2B30)
 
@@ -142,7 +142,7 @@ cp server/.env.example server/.env
 ```ini
 LLM_PROVIDER=anthropic
 LLM_API_KEY=<your Anthropic API key>
-LLM_MODEL=            # empty means claude-haiku-5-5
+LLM_MODEL=            # empty means claude-sonnet-5-5
 ```
 
 Restart `npm run dev:server`. `GET http://localhost:8787/healthz` reports the active provider. If the model is slow or unavailable, you still get the rules-only result. The key stays on the server; the extension holds no secrets.
@@ -212,14 +212,21 @@ sequenceDiagram
 
 ## Accuracy, honestly
 
-| Measured (offline mock mode, rules only) | Result |
-|---|---|
-| Demo store verdicts | 5 / 5 |
-| 10 real-world policies, verdicts | 7 / 10 |
-| 10 real-world policies, flag precision / recall | 84% / 80% |
+Measured on 2026-11-14 over 5 demo stores and 10 real-world policies from well-known streaming, subscription, retail and gym sites (texts kept locally, not in the repo).
+
+| | Rules only (on device) | Rules + Haiku 5.5 | **Rules + Sonnet 5.5** (default) | Rules + Opus 5.5 |
+|---|---|---|---|---|
+| Demo store verdicts | 5 / 5 | 5 / 5 | **5 / 5** | 5 / 5 |
+| Real-world verdicts | 7 / 10 | 7 / 10 | **9 / 10** | 9 / 10 |
+| Real-world flag precision | 84% | 76% | **86%** | 76% |
+| Real-world flag recall | 80% | 95% | **95%** | 95% |
+| Model findings dropped by quote check | n/a | 14 / 31 | **12 / 28** | 12 / 33 |
+| Median analysis time (real-world) | instant | 4.3 s | **3.3 s** | 5.5 s |
+
+Adding the model lifts recall from 80% to 95%: it catches the clauses that keyword rules miss. Quote verification is doing real work: roughly 4 in 10 model findings are dropped because their quote didn't match the policy exactly, and none of those ever reach a shopper.
 
 > [!IMPORTANT]
-> These are early numbers. The real-world labels were drafted by an AI agent and haven't been human-reviewed yet, and the rules were tuned while looking at those texts, so they are not held-out results. The real model has not been measured yet. `npm run eval -- --compare` prints rules-only and rules + Claude side by side once an API key is set.
+> Small sample, provisional labels. The real-world labels were drafted by an AI agent and haven't been human-reviewed yet, and the rules were tuned while looking at those texts, so these are not held-out results. Run `npm run eval -- --compare` to reproduce.
 
 ## Project layout
 

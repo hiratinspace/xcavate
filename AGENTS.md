@@ -72,7 +72,7 @@ npm run eval              # accuracy report -> eval/results.md (local only)
 npm run e2e               # real Chromium + extension over the fixture stores (stop dev servers first)
 ```
 
-Real model: create `server/.env` (git-ignored) with `LLM_PROVIDER=anthropic`, `LLM_API_KEY=...`, optional `LLM_MODEL` (default `claude-haiku-5-5`). See `server/.env.example` for every setting (`PUBLISH_CLIENT_REPORTS`, `TRUST_PROXY`, `STORE`, `RATE_LIMIT_PER_MIN`, ...).
+Real model: create `server/.env` (git-ignored) with `LLM_PROVIDER=anthropic`, `LLM_API_KEY=...`, optional `LLM_MODEL` (default `claude-sonnet-5-5`, chosen by the V-03 eval). See `server/.env.example` for every setting (`PUBLISH_CLIENT_REPORTS`, `TRUST_PROXY`, `STORE`, `RATE_LIMIT_PER_MIN`, ...).
 
 ## 5. How the agents worked (and how you should)
 
@@ -112,7 +112,7 @@ The loop every change went through:
 
 **Done and pushed:** scaffold and contracts; fixture stores; backend (API, pipeline, LLM client, store, seed, eval, prompt-injection tests); extension (all P0 plus fees, add-ons, trial reminder, cancellation helper, change alerts, settings); README; two independent review rounds with fixes; contract support for the `partial` verdict and per-flag `context` / `rightsNote`. 
 
-**Measured so far (offline mock mode, rules only, no real model):** fixtures 5/5 verdicts. 10 real policies: 7/10 verdicts, precision 84%, recall 80%. Caveats: real-world labels were drafted by an AI agent and not yet human-reviewed, and the rules were tuned while looking at those texts, so these are not held-out numbers. **The real model has not been measured yet.**
+**Measured (V-03, 2026-11-14, `npm run eval -- --compare`, 30 s timeout):** fixtures 5/5 verdicts for every configuration. 10 real policies: rules only 7/10 verdicts, precision 84%, recall 80%. Rules + Sonnet 5.5 (the default): 9/10, precision 86%, recall 95%, median 3.3 s, 12/28 model findings dropped by quote verification. Haiku 5.5: 7/10, 76%, 95%, 4.3 s. Opus 5.5: 9/10, 76%, 95%, 5.5 s. Only miss with Sonnet: a news-subscription terms page (expected yellow, got green; cancellation_friction not found by rules or model). Caveats: real-world labels were drafted by an AI agent and not yet human-reviewed, and the rules were tuned while looking at those texts, so these are not held-out numbers.
 
 **Direction v2 (merged):** recalibrated verdict (V-01: plain renewals with online cancel are low, red needs harsh terms; arbitration and data sharing never drive the verdict), grey "Partly read" state instead of false green (V-02), honest mock + `npm run eval -- --compare` (V-03 code), trial card headline with charge date, Remind me and a quoted line (V-05), card fires on pricing pages (V-07), California rights note on phone-only cancellation (V-08, wording pending owner review), Shopify fallback paths (V-10), domain-only `pageUrl` (V-11), snapshot retention that refuses new versions at the per-URL cap, hardened netguard, on-device rules verdict that the backend report upgrades plus an "AI check" setting that sends nothing when off (V-06, parity-tested against the server). Professional README with screenshots in `.github/assets/`. Real-browser e2e (V-04): 9 Playwright specs pass in headless Chromium with the extension loaded; it found and fixed a stale "ticked for you" card row. About 578 unit tests.
 
@@ -120,10 +120,9 @@ The loop every change went through:
 
 | ID | What | Notes |
 |---|---|---|
-| V-03 | Run the real model, report rules-only vs rules + Claude side by side, median latency | Needs an API key in `server/.env` |
 | - | Human review of the real-world labels (`eval/real/labels.json`, local only; ask the owner for the files) | Needed before any accuracy number is quoted |
 | V-09 | Deploy the backend and ship a packed `.zip` | Deferred by the owner until the tool works end to end |
-| V-12 | Pitch rewrite around proof + action; honest comparison with TermAlert, AgreeGuard and Gemini | After V-03 numbers exist |
+| V-12 | Pitch rewrite around proof + action; honest comparison with TermAlert, AgreeGuard and Gemini | V-03 numbers now exist (section 6) |
 
 **Known limits:** JavaScript-rendered and bot-protected policy pages need the "Scan this page" fallback (common on ticketing and gym sites); DNS rebinding can't be fully stopped by hostname checks (leaked text only reaches the Xcavate backend); change alerts rely on client-submitted policy snapshots, so a determined anonymous flood can suppress them for a URL (it cannot fake one: versions are keyed by text hash); the proper fix for both is server-side fetching of policy URLs; English only; no PDFs; Chrome only.
 
