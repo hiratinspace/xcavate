@@ -74,6 +74,8 @@ export class DarkPatternMarkers {
   private timer: ReturnType<typeof setInterval> | undefined;
   private onChange = (e: Event) => this.handleChange(e);
   private onResize = () => this.position();
+  /** Called with the findings still outlined after the shopper unticks one, so the card and popup can drop it. */
+  onUpdate?: (remaining: DarkPatternFinding[]) => void;
 
   constructor(private doc: Document, shadowMode: ShadowRootMode = "closed") {
     this.host = doc.createElement("xcavate-marks");
@@ -119,13 +121,16 @@ export class DarkPatternMarkers {
   }
 
   private handleChange(e: Event): void {
+    let removed = false;
     for (const [input, { hit, box }] of this.marks) {
       const affected = e.target === input || (hit.finding.kind === "preselected_subscription" && (e.target as Element)?.getAttribute?.("name") === input.getAttribute("name"));
       if (affected && !input.checked) {
         box.remove();
         this.marks.delete(input);
+        removed = true;
       }
     }
+    if (removed) this.onUpdate?.(Array.from(this.marks.values(), (m) => m.hit.finding));
     if (!this.marks.size) this.destroy();
   }
 

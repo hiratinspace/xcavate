@@ -174,3 +174,70 @@ export function buildCancellationMailto(store: string, cancellation: Cancellatio
   ].join("\n");
   return "mailto:" + to + "?subject=" + encodeURIComponent("Cancellation request") + "&body=" + encodeURIComponent(body);
 }
+
+const PERIOD_SUFFIX = { week: "/week", month: "/month", year: "/year" } as const;
+
+/**
+ * V-05 charge-date headline: "Free for 7 days, then $14.99/month from Sat, Nov 21".
+ * The date is today + lengthDays in the browser's locale. Without a price: "Free for 7 days, then paid from …".
+ */
+export function chargeHeadline(trial: TrialInfo | undefined, today = new Date(), locale?: string): string | undefined {
+  if (!trial?.lengthDays || trial.lengthDays < 1) return undefined;
+  const charge = addDays(today, trial.lengthDays);
+  const date = charge.toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" });
+  const days = trial.lengthDays === 1 ? "1 day" : trial.lengthDays + " days";
+  const after = trial.priceAfter?.trim();
+  // Some models already put the period in the price ("$14.99 per month"): don't add a second one.
+  const hasPeriod = !!after && /\/|\bper\b|\b(a|each|every)\s+(week|month|year)|monthly|yearly|weekly|annual/i.test(after);
+  const price = after ? after + (trial.billingPeriod && !hasPeriod ? PERIOD_SUFFIX[trial.billingPeriod] : "") : "paid";
+  return `Free for ${days}, then ${price} from ${date}`;
+}
+
+/** Money categories first; arbitration and data sharing never make the card (the popup still lists them). */
+const NOT_ON_CARD = new Set(["arbitration", "data_sharing"]);
+export function cardFlags<T extends { category: string }>(flags: T[], max = 3): T[] {
+  const money = (c: string) => (c === "missing_policy" ? 1 : 0);
+  return flags
+    .map((f, i) => ({ f, i }))
+    .filter(({ f }) => !NOT_ON_CARD.has(f.category))
+    .sort((a, b) => money(a.f.category) - money(b.f.category) || a.i - b.i)
+    .slice(0, max)
+    .map(({ f }) => f);
+}
+
+/** Split text into plain parts and http(s) URLs, so only real URLs become links (rights notes). */
+export function linkParts(text: string): { text: string; href?: string }[] {
+  const out: { text: string; href?: string }[] = [];
+  let last = 0;
+  for (const m of text.matchAll(/https?:\/\/[^\s<>"')]+[^\s<>"').,;:!?]/g)) {
+    const i = m.index ?? 0;
+    if (i > last) out.push({ text: text.slice(last, i) });
+    out.push({ text: m[0], href: m[0] });
+    last = i + m[0].length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
+export const RIGHTS_LABEL = "Your rights (general information, not legal advice)";
+
+const POLICY_WORD = { subscription: "subscription terms", refund: "refund policy", terms: "terms", privacy: "privacy policy", other: "this page" } as const;
+
+/**
+ * V-02 partial: name what we couldn't read, or say we only found a privacy policy, and point at Scan this page.
+ */
+export function partialNote(r: Report): string {
+  const unreadable = r.policies.filter((p) => p.status === "unreadable");
+  if (unreadable.length) {
+    const names = andList(Array.from(new Set(unreadable.map((p) => POLICY_WORD[p.kind]))));
+    return `Couldn't read the ${names}. Open ${unreadable.length === 1 ? "it" : "them"} and press Scan this page.`;
+  }
+  const read = Array.from(new Set(r.policies.filter((p) => p.status === "analyzed").map((p) => POLICY_WORD[p.kind])));
+  const what = read.length ? "only the " + andList(read) : "no terms or refund policy";
+  return `We found ${what}. If the site has terms or a refund policy, open it and press Scan this page.`;
+}
+
+/** ["terms", "refund policy"] → "terms and refund policy"; three or more → "a, b and c". */
+export function andList(items: string[]): string {
+  return items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
+}

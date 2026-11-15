@@ -1,4 +1,4 @@
-import { CATEGORY_LABEL, normalizeForMatch } from "@xcavate/shared";
+import { CATEGORY_LABEL, normalizeForMatch } from "../core.js";
 import { keywordScore } from "./prefilter.js";
 import { runRules } from "./rules.js";
 import { splitParagraphs } from "./split.js";

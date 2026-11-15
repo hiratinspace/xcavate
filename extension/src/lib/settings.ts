@@ -22,6 +22,7 @@ export async function loadSettings(): Promise<Settings> {
     enabled: s.enabled ?? DEFAULT_SETTINGS.enabled,
     apiBase: s.apiBase ? normalizeApiBase(s.apiBase) : DEFAULT_SETTINGS.apiBase,
     pausedDomains: Array.isArray(s.pausedDomains) ? s.pausedDomains.filter((d) => typeof d === "string") : [],
+    aiCheck: typeof s.aiCheck === "boolean" ? s.aiCheck : DEFAULT_SETTINGS.aiCheck,
   };
 }
 
@@ -31,6 +32,7 @@ export async function saveSettings(patch: Partial<Settings>): Promise<Settings> 
     enabled: patch.enabled ?? cur.enabled,
     apiBase: patch.apiBase !== undefined ? normalizeApiBase(patch.apiBase) : cur.apiBase,
     pausedDomains: patch.pausedDomains ?? cur.pausedDomains,
+    aiCheck: patch.aiCheck ?? cur.aiCheck,
   };
   await chrome.storage.local.set({ [SETTINGS_KEY]: next });
   return next;

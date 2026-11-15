@@ -1,4 +1,4 @@
-import { normalizeForMatch } from "@xcavate/shared";
+import { normalizeForMatch } from "../core.js";
 import type { Paragraph } from "./split.js";
 
 /**

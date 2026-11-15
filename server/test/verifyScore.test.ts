@@ -1,8 +1,8 @@
 import type { Flag, PolicyKind } from "@xcavate/shared";
 import { describe, expect, it } from "vitest";
-import { MISSING_POLICY_FLAG, applyCaps, capSeverity, computeVerdict, needsMissingPolicy, sortFlags } from "../src/pipeline/score.js";
-import { splitParagraphs } from "../src/pipeline/split.js";
-import { locateQuote, prepareForVerify, verifyQuote } from "../src/pipeline/verify.js";
+import { MISSING_POLICY_FLAG, applyCaps, capSeverity, computeVerdict, needsMissingPolicy, sortFlags } from "@xcavate/shared/engine";
+import { splitParagraphs } from "@xcavate/shared/engine";
+import { locateQuote, prepareForVerify, verifyQuote } from "@xcavate/shared/engine";
 
 const POLICY_A = "Refunds.\n\nAll sales are final. We don’t give   refunds\nfor “sale” items — sorry.";
 const POLICY_B = "Shipping.\n\nWe ship worldwide within 3 days.";

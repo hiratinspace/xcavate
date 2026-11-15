@@ -15,7 +15,7 @@ export interface Config {
   trustProxy: number;
 }
 
-export const DEFAULT_MODEL = "claude-haiku-5-5";
+export const DEFAULT_MODEL = "claude-sonnet-5-5";
 
 function int(v: string | undefined, fallback: number): number {
   const n = Number.parseInt(v ?? "", 10);

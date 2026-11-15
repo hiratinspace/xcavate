@@ -1,8 +1,6 @@
 import type { LlmOutput } from "@xcavate/shared";
-import { ruleChangeBullets } from "../pipeline/diff.js";
-import { extractCancellation, extractTrial } from "../pipeline/extract.js";
-import { bestPerCategory, runRules } from "../pipeline/rules.js";
-import type { Paragraph } from "../pipeline/split.js";
+import { bestPerCategory, extractCancellation, extractTrial, ruleChangeBullets, runRules } from "@xcavate/shared/engine";
+import type { Paragraph } from "@xcavate/shared/engine";
 import type { ChangeInput, LlmClient, LlmPolicyInput } from "./client.js";
 
 /**

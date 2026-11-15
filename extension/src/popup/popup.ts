@@ -71,6 +71,7 @@ async function main() {
         void updateSettings({ pausedDomains: Array.from(set) });
       },
       saveApiBase: (v) => void updateSettings({ apiBase: v }),
+      setAiCheck: (v) => void updateSettings({ aiCheck: v }),
       downloadIcs: (filename, ics) => {
         const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
         const a = document.createElement("a");

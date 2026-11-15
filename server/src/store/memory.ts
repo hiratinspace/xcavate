@@ -137,13 +137,16 @@ export class MemoryStore implements Store {
   putSnapshot(url: string, hash: string, text: string) {
     const k = url + "|" + hash;
     const t = this.now();
+    // Versions of this URL not seen for 30 days go first.
+    for (const [x, e] of [...this.snapshots.entries()]) {
+      if (x.startsWith(url + "|") && t - e.at >= SNAPSHOT_MAX_AGE_MS) this.snapshots.delete(x);
+    }
+    // At the per-URL cap, refuse NEW versions instead of evicting old ones (flooding must not push a
+    // genuine older version out). Known versions are still refreshed.
+    const count = [...this.snapshots.keys()].filter((x) => x.startsWith(url + "|")).length;
+    if (!this.snapshots.has(k) && count >= SNAPSHOTS_PER_URL) return;
     // Re-submission refreshes last-seen (and moves the entry to the recent end of the Map).
     setCapped(this.snapshots, k, { v: text, at: t }, MAX_SNAPSHOTS);
-    // Versions of this URL: drop those not seen for 30 days, then apply the per-URL safety cap.
-    const mine = [...this.snapshots.entries()].filter(([x]) => x.startsWith(url + "|"));
-    for (const [old, e] of mine) if (t - e.at >= SNAPSHOT_MAX_AGE_MS) this.snapshots.delete(old);
-    const kept = mine.filter(([, e]) => t - e.at < SNAPSHOT_MAX_AGE_MS);
-    for (const [old] of kept.slice(0, Math.max(0, kept.length - SNAPSHOTS_PER_URL))) this.snapshots.delete(old);
     this.schedule();
   }
   getChange(key: string) {

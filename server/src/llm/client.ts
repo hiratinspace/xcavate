@@ -1,12 +1,8 @@
-import type { LlmOutput, PolicyKind } from "@xcavate/shared";
+import type { LlmOutput } from "@xcavate/shared";
+import type { LlmPolicyInput } from "@xcavate/shared/engine";
 
-/** One policy as the model sees it: kept paragraphs with request-wide ids. */
-export interface LlmPolicyInput {
-  url: string;
-  kind: PolicyKind;
-  /** `id` is unique across the whole request, so findings can be mapped back to a policy. */
-  paragraphs: { id: number; text: string }[];
-}
+/** One policy as the model sees it (defined with the shared engine, which builds it). */
+export type { LlmPolicyInput } from "@xcavate/shared/engine";
 
 export interface ChangeInput {
   policyUrl: string;

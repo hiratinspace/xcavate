@@ -168,7 +168,7 @@ describe("3. Scan this page refuses checkout pages", () => {
     document.body.innerHTML = "<main id=app></main>";
     const root = document.getElementById("app")!;
     renderPopup(root, { settings: DEFAULT_SETTINGS, state: { status: "idle" } }, { scan() {}, setEnabled() {}, setPaused() {}, saveApiBase() {}, downloadIcs() {} });
-    expect(root.querySelector("footer")?.textContent).toContain("Scan this page sends the text of the page you scan");
+    expect(root.querySelector("footer")?.textContent).toContain("Scan this page also sends the text and address of the page you scan");
   });
 });
 

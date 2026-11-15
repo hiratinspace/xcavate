@@ -6,6 +6,7 @@ import {
   type Message,
   type PageReadyReply,
 } from "@xcavate/shared/core";
+import type { DarkPatternFinding } from "@xcavate/shared/core";
 import { send } from "../lib/messaging";
 import { buildAnalyzeRequest } from "../lib/request";
 import { CARD_HOST_ID, Card } from "./card";
@@ -60,14 +61,17 @@ export function startContent(win: Window = window): void {
     clearMarkers();
     const fees = detectFees(doc);
     const hits = findDarkPatterns(doc);
+    // Local findings go to the service worker only; they are never sent to the backend.
+    const publish = (darkPatterns: DarkPatternFinding[]) => {
+      card.setLocal({ fees, darkPatterns });
+      void send({ type: MSG.LOCAL_FINDINGS, fees, darkPatterns });
+    };
     if (hits.length) {
       markers = new DarkPatternMarkers(doc);
+      markers.onUpdate = publish; // the shopper unticked a box: drop it from the card and popup too
       markers.mark(hits);
     }
-    const darkPatterns = hits.map((h) => h.finding);
-    card.setLocal({ fees, darkPatterns });
-    // Local findings go to the service worker only; they are never sent to the backend.
-    void send({ type: MSG.LOCAL_FINDINGS, fees, darkPatterns });
+    publish(hits.map((h) => h.finding));
   };
 
   const run = async () => {
@@ -95,7 +99,7 @@ export function startContent(win: Window = window): void {
     try {
       const request = await collectPolicies(doc, url, cls.pageType, { settle: () => waitForDomQuiet(doc), cache: policyCache });
       if (my !== gen) return;
-      const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request });
+      const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request, page: pageKey });
       if (my !== gen) return;
       if (res?.ok && res.report) {
         analyzedFor = pageKey;
@@ -124,7 +128,8 @@ export function startContent(win: Window = window): void {
       linksFound: 1,
       policies: [{ url: stripPageUrl(url), kind: "other", text: ex.text }],
     });
-    const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request });
+    // A manual scan sends the scanned page's own (query-less) address: its text is the policy.
+    const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request, page: stripPageUrl(url) });
     if (my !== gen) return;
     if (res?.ok && res.report) card.showReport(res.report);
     else card.hide();

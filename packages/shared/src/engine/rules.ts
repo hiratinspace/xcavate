@@ -1,5 +1,5 @@
-import { CATEGORY_ORDER, LIMITS, SEVERITY_RANK } from "@xcavate/shared";
-import type { Category, Severity } from "@xcavate/shared";
+import { CATEGORY_ORDER, LIMITS, SEVERITY_RANK } from "../core.js";
+import type { Category, Severity } from "../core.js";
 import type { Paragraph } from "./split.js";
 import {
   NUM,

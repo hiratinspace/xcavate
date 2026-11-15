@@ -28,3 +28,6 @@ eval/results.md
 
 # Local browser QA screenshots and downloaded evidence
 .demo-evidence/
+# Playwright e2e output
+test-results/
+playwright-report/

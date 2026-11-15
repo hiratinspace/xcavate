@@ -1,7 +1,7 @@
 import { LIMITS } from "@xcavate/shared";
 import { describe, expect, it } from "vitest";
-import { keywordScore, prefilter } from "../src/pipeline/prefilter.js";
-import { MAX_PARAGRAPH_CHARS, splitParagraphs } from "../src/pipeline/split.js";
+import { keywordScore, prefilter } from "@xcavate/shared/engine";
+import { MAX_PARAGRAPH_CHARS, splitParagraphs } from "@xcavate/shared/engine";
 
 describe("splitParagraphs", () => {
   it("splits on blank lines, numbers from 0, collapses inner whitespace", () => {

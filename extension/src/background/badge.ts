@@ -1,7 +1,7 @@
 import type { Report, TabStatus } from "@xcavate/shared";
 import { VERDICT_COLOR } from "../content/tokens";
 
-/** U-02 toolbar badge: red "!" + count, yellow count, green "✓", grey "?". */
+/** U-02 toolbar badge: red "!" + count, yellow count, green "✓", grey "◐" when partly read, grey "?". */
 
 export interface BadgeSpec {
   text: string;
@@ -20,6 +20,9 @@ export function badgeFor(report: Report | undefined, status: TabStatus): BadgeSp
       return { text: String(n || ""), color: VERDICT_COLOR.yellow, title: `Xcavate: worth a look (${n} flags)` };
     case "green":
       return { text: "✓", color: VERDICT_COLOR.green, title: "Xcavate: no money traps found" };
+    case "partial":
+      // Never green: we only read part of the terms.
+      return { text: "◐", color: VERDICT_COLOR.unknown, title: "Xcavate: partly read, no money traps in what we could read" };
     default:
       return { text: "?", color: VERDICT_COLOR.unknown, title: "Xcavate: couldn't read the terms" };
   }

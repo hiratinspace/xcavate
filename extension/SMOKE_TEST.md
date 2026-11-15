@@ -18,10 +18,11 @@ A scripted manual pass over the four fixture stores. Run it from a cold start: a
 ## 1. StreamNest (red) http://streamnest.localhost:4000/checkout
 
 - [ ] Product page http://streamnest.localhost:4000/ shows **no card** and no badge.
-- [ ] On `/checkout` a card appears bottom-right at once saying "Checking the fine print", then turns red: octagon "!" icon, "Read first", "3 things to read before you pay".
-- [ ] Card flags: trial turns into a paid plan, renews automatically, cancel by phone only / 30 days' notice. Each shows a severity word (High).
+- [ ] On `/checkout` a card appears bottom-right at once saying "Checking the fine print", then turns red: octagon "!" icon, "Read first", and the headline "Free for 7 days, then $14.99/month from <today + 7, e.g. Sat, Nov 21>" (V-05).
+- [ ] Under the headline: **Remind me 2 days before** (opens Google Calendar) and **.ics file** (downloads), both reachable with Tab and Enter. Then one quoted sentence (the trial clause) with **See in policy**.
+- [ ] Below the quote: renews automatically, cancel by phone only / 30 days' notice, each with a severity word (High). The trial flag is not repeated and arbitration is **not** on the card (the popup still lists it).
 - [ ] Badge is red `!3` (or `!` + flag count).
-- [ ] Service worker Network tab: one `POST /v1/analyze`. Request body has only `pageUrl`, `pageType`, `linksFound`, `policies` (each `url`, `kind`, `text`, optional `previousHash`). `pageUrl` has no `?` or `#`.
+- [ ] Service worker Network tab: one `POST /v1/analyze`. Request body has only `pageUrl`, `pageType`, `linksFound`, `policies` (each `url`, `kind`, `text`, optional `previousHash`). `pageUrl` is just the origin with a slash (`http://localhost:3000/` style, V-11), never the checkout path.
 - [ ] The cross-origin terms page `http://legal.localhost:4001/streamnest/terms` was fetched by the service worker (it appears in the service worker's Network tab, not the page's).
 - [ ] Open the popup: every flag shows title, summary, cost, the quote in a blockquote, and **See in policy**.
 - [ ] **See in policy** opens the policy with the quoted sentence highlighted and scrolled into view.
@@ -77,6 +78,14 @@ A scripted manual pass over the four fixture stores. Run it from a cold start: a
 - [ ] ShopApp http://shopapp.localhost:4000/ : no card. Click **Go to checkout** (no reload, URL changes to `/checkout`): the card appears within a second or so. Click "Back to the shop": the card goes away and the badge clears.
 - [ ] Change alert: visit StreamNest checkout once. Open http://localhost:4000/__set?site=streamnest&v=2 , reload the StreamNest checkout: the card and popup show "Terms changed since your last visit" with the price change. Reset with `v=1`.
 - [ ] Instant path: stop the server, delete the DB, run `npm run seed`, start the server. In a fresh profile, a first-ever visit to a fixture checkout shows its verdict in under 0.5 s (`GET /v1/report?domain=` in the service worker Network tab).
+
+## 8. Direction v2 extras
+
+- [ ] Partial: on a page where only the privacy policy (or some policies) could be read, the card and popup say "Partly read" with a grey half-circle icon, list what couldn't be read and suggest Scan this page. Badge is grey `◐`, never green.
+- [ ] Flags with a context line show it in italics under the summary. Flags with a rights note show a "Your rights (general information, not legal advice)" box in the popup (and on the card for the top 3); only http(s) URLs in it are links.
+- [ ] Pricing page: a page with "Start free trial" (or "Try it free" / "Get started free") next to "$9.99/mo" or "14-day trial" gets a card (sign-up). A news story with a paywall banner does not.
+- [ ] Shopify store with no policy links on checkout: the service worker fetches `/policies/refund-policy` and `/policies/terms-of-service` first.
+- [ ] Popup footer: "Sent for analysis: the site's address (domain only) and the text of the policy pages it links to. ..."
 
 ## Notes
 

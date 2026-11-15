@@ -16,6 +16,9 @@ import {
   buildCancellationMailto,
   buildTrialReminder,
   contactHref,
+  linkParts,
+  partialNote,
+  RIGHTS_LABEL,
   storeName,
   trialPolicyUrl,
 } from "../lib/actions";
@@ -41,8 +44,24 @@ export interface PopupActions {
   setEnabled(v: boolean): void;
   setPaused(v: boolean): void;
   saveApiBase(v: string): void;
+  /** V-06 "AI check" setting. Optional so older callers keep working. */
+  setAiCheck?(v: boolean): void;
   downloadIcs(filename: string, ics: string): void;
 }
+
+export const PRIVACY_LINE =
+  "Sent for analysis: the site's address (domain only) and the text of the policy pages it links to. Scan this page also sends the text and address of the page you scan, so Xcavate refuses to scan checkout pages. Fees and ticked boxes stay on your computer.";
+
+/** Privacy line with the AI check off (V-06): the rules engine runs on this device only. */
+export const PRIVACY_LINE_LOCAL =
+  "AI check is off, so nothing is sent to the Xcavate service. Policy pages are fetched from the site and checked on your device. Fees and ticked boxes stay on your computer.";
+
+/** V-06: one quiet line when the report shown was worked out on this device. */
+export const LOCAL_CHECK_NOTE = {
+  pending: "Checked on your device. The AI check is still running.",
+  unavailable: "Checked on your device (AI check unavailable).",
+  off: "Checked on your device (AI check off).",
+} as const;
 
 const SEVERITY_WORD = { high: "High", medium: "Medium", low: "Low" } as const;
 const KIND_WORD = { subscription: "Subscription", refund: "Refunds", terms: "Terms", privacy: "Privacy", other: "This page" } as const;
@@ -91,6 +110,7 @@ export function renderPopup(root: HTMLElement, view: PopupView, actions: PopupAc
     parts.push(h("section", {}, h("p", {}, "Xcavate is switched off. Turn it on in Settings below to check checkout pages again.")));
   } else if (report) {
     const { lead, tail } = reportSections(report, view);
+    if (state?.localCheck) parts.push(h("p", { class: "muted local-check" }, LOCAL_CHECK_NOTE[state.localCheck]));
     parts.push(...lead, ...local, ...tail);
     local.length = 0;
   } else if (status === "error") {
@@ -138,8 +158,7 @@ export function renderPopup(root: HTMLElement, view: PopupView, actions: PopupAc
     h(
       "footer",
       {},
-      DISCLAIMER +
-        " Sent for analysis: the text of the policy pages this site links to, and page addresses without their query. Scan this page sends the text of the page you scan, so Xcavate refuses to scan checkout pages. Fees and ticked boxes stay on your computer.",
+      DISCLAIMER + " " + (view.settings.aiCheck ? PRIVACY_LINE : PRIVACY_LINE_LOCAL),
     ),
   );
 
@@ -218,6 +237,17 @@ function reportSections(report: Report, view: PopupView): { lead: HTMLElement[];
     );
   } else if (report.verdict === "green") {
     out.push(h("section", {}, h("p", {}, "No auto-renewals, refund limits, cancellation hoops or extra fees were found in the terms we read.")));
+  }
+  if (report.verdict === "partial") {
+    out.push(
+      h(
+        "section",
+        { class: "partial" },
+        h("h2", {}, "Only partly read"),
+        h("p", {}, partialNote(report)),
+        h("p", { class: "muted" }, "No money traps in what we could read. That isn't the same as none."),
+      ),
+    );
   } else if (report.verdict === "unknown") {
     out.push(
       h(
@@ -318,6 +348,7 @@ function flagItem(f: Flag): HTMLElement {
     {},
     h("h3", {}, f.title, h("small", { title: CATEGORY_LABEL[f.category] }, SEVERITY_WORD[f.severity])),
     h("p", { class: "sum" }, f.summary),
+    f.context ? h("p", { class: "ctx" }, f.context) : null,
     f.costImpact ? h("p", { class: "cost" }, "Cost: " + f.costImpact) : null,
     f.quote ? h("blockquote", {}, f.quote) : null,
     f.quote && f.policyUrl
@@ -328,8 +359,14 @@ function flagItem(f: Flag): HTMLElement {
           " (" + shortUrl(f.policyUrl) + ")",
         )
       : null,
+    f.rightsNote ? rightsBox(f.rightsNote) : null,
   );
   return h("li", { class: "flag", "data-sev": f.severity }, sev, body);
+}
+
+function rightsBox(note: string): HTMLElement {
+  const parts = linkParts(note).map((x) => (x.href ? h("a", { href: x.href, target: "_blank", rel: "noopener noreferrer" }, x.text) : x.text));
+  return h("div", { class: "rights" }, h("p", { class: "rights-label" }, RIGHTS_LABEL), h("p", { class: "rights-text" }, ...parts));
 }
 
 function localFees(fees: FeeSummary | undefined): HTMLElement | null {
@@ -354,6 +391,8 @@ function settingsSection(view: PopupView, actions: PopupActions): HTMLElement {
   const paused = !!view.domain && view.settings.pausedDomains.includes(view.domain);
   const pause = h("input", { type: "checkbox", id: "set-pause", checked: paused, disabled: !view.domain }) as HTMLInputElement;
   pause.addEventListener("change", () => actions.setPaused(pause.checked));
+  const ai = h("input", { type: "checkbox", id: "set-ai", checked: view.settings.aiCheck }) as HTMLInputElement;
+  ai.addEventListener("change", () => actions.setAiCheck?.(ai.checked));
   const api = h("input", { type: "url", id: "set-api", value: view.settings.apiBase, spellcheck: "false" }) as HTMLInputElement;
   const save = h("button", { class: "btn", type: "button" }, "Save address");
   save.addEventListener("click", () => actions.saveApiBase(api.value));
@@ -366,6 +405,12 @@ function settingsSection(view: PopupView, actions: PopupActions): HTMLElement {
       h("summary", {}, "Settings"),
       h("div", { class: "setting" }, enabled, h("label", { for: "set-enabled" }, "Check checkout pages automatically")),
       h("div", { class: "setting" }, pause, h("label", { for: "set-pause" }, view.domain ? "Pause on " + view.domain : "Pause on this site")),
+      h(
+        "div",
+        { class: "setting" },
+        ai,
+        h("label", { for: "set-ai" }, "AI check: also send the policy text to the Xcavate service for a second read (off: checked on your device only)"),
+      ),
       h(
         "div",
         { class: "setting col" },

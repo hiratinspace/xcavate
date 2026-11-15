@@ -2,7 +2,12 @@
   "name": "xcavate",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/shared", "server", "extension", "eval"],
+  "workspaces": [
+    "packages/shared",
+    "server",
+    "extension",
+    "eval"
+  ],
   "scripts": {
     "build": "npm run build -w @xcavate/shared && npm run build -w @xcavate/server && npm run build -w @xcavate/extension",
     "test": "vitest run",
@@ -12,13 +17,15 @@
     "dev:ext": "npm run dev -w @xcavate/extension",
     "eval": "npm run eval -w @xcavate/eval --",
     "seed": "npm run seed -w @xcavate/server",
-    "demo": "npm run build && node fixtures/demo/start.mjs"
+    "demo": "npm run build && node fixtures/demo/start.mjs",
+    "e2e": "npm run build -w @xcavate/shared && npm run build -w @xcavate/extension && playwright test -c e2e/playwright.config.ts"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0",
-    "jsdom": "^25.0.0",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^22.0.0",
-    "tsx": "^4.19.0"
+    "jsdom": "^25.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
   }
 }

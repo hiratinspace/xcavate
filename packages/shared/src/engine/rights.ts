@@ -1,4 +1,4 @@
-import type { Flag, Report } from "@xcavate/shared";
+import type { Flag, Report } from "../core.js";
 import { isPhoneOrMailOnly } from "./rules.js";
 
 /**

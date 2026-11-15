@@ -36,12 +36,13 @@ The verdict is always computed in code, never by the model. The model only propo
 
 | Path | What lives there |
 |---|---|
-| `packages/shared/src` | **The contracts.** zod schemas are the source of truth (`schemas.ts`); TS types are `z.infer` of them (`types.ts`). `core.ts` is a zod-free entry (`@xcavate/shared/core`) for the content script and popup. Also categories, severity caps, keywords, message types, text helpers (normalisation, hashing, text-fragment links), verdict wording, sample reports. |
-| `server/src` | `app.ts` (Express factory), `routes/`, `pipeline/` (`split`, `prefilter`, `rules`, `verify`, `ground`, `score`, `diff`, `extract`, `rights`, `run`), `llm/` (`anthropic.ts`, `mock.ts`, `prompt.ts`, `schema.ts`), `store/` (sqlite, memory), `log.ts` (logs domain + timing only). |
+| `packages/shared/src` | **The contracts.** zod schemas are the source of truth (`schemas.ts`); TS types are `z.infer` of them (`types.ts`). `core.ts` is a zod-free entry (`@xcavate/shared/core`) for the content script and popup. Also categories, severity caps, keywords, message types, text helpers (normalisation, hashing, text-fragment links), verdict wording, sample reports. `engine/` is the rules engine and analysis steps (`split`, `prefilter`, `rules`, `verify`, `ground`, `score`, `diff`, `extract`, `rights`, `textutil`, `analyze` with `runRulesOnly`), a zod-free entry (`@xcavate/shared/engine`) shared by the server pipeline and the extension's service worker (V-06). |
+| `server/src` | `app.ts` (Express factory), `routes/`, `pipeline/run.ts` (orchestration: store, cache, model call, change summaries; the pure steps come from `@xcavate/shared/engine`), `llm/` (`anthropic.ts`, `mock.ts`, `prompt.ts`, `schema.ts`), `store/` (sqlite, memory), `log.ts` (logs domain + timing only). |
 | `server/scripts` | `seed.ts` (trusted run that publishes demo reports), `fixtureRequests.ts`. |
 | `extension/src` | `content/` (classifier, policyFinder, extractor, collect, fees, darkPatterns, spa, card), `background/` (handlers, state, api, badge), `lib/` (netguard SSRF guard, fetchCapped, actions for calendar/.ics/mailto, money parsing), `popup/`. `build.mjs` bundles to `extension/dist`. |
 | `fixtures/` | Five fictional stores on `*.localhost:4000` plus a cross-origin legal host on `:4001`, `golden.json` (expected verdicts and forbidden categories), `load.ts` test helper. Hosts, routes and planted clauses: `fixtures/README.md`. |
 | `extension/SMOKE_TEST.md` | Manual end-to-end checklist over the fixture stores (V-04). |
+| `e2e/` | Playwright specs that load `extension/dist` in real Chromium against the fixture stores and the mock backend behind a request-counting proxy (V-04). `npm run e2e`; needs ports 4000, 4001, 8787, 8788 free; screenshots go to `test-results/screens/` (git-ignored). Not part of `npm test`. |
 | `docs/` | Planning and pitch material (temporary on GitHub): `plan/` (direction v2), `pitch/` (pitch, submission text, demo script), `research/` (real-site notes, outside critique). `BUILD_PLAN.md` at the root is the original spec referenced by section numbers in code comments. |
 | `eval/run.ts` | Accuracy script: per-category precision/recall, verdict accuracy, latency. Real-world texts live in `eval/real/` (git-ignored, copyrighted). |
 
@@ -68,9 +69,10 @@ npm run build             # builds shared check, server typecheck, extension/dis
 npm run seed              # optional: instant cached results for the fixture stores
 npm test                  # all vitest projects (shared, server, extension, fixtures)
 npm run eval              # accuracy report -> eval/results.md (local only)
+npm run e2e               # real Chromium + extension over the fixture stores (stop dev servers first)
 ```
 
-Real model: create `server/.env` (git-ignored) with `LLM_PROVIDER=anthropic`, `LLM_API_KEY=...`, optional `LLM_MODEL` (default `claude-haiku-5-5`). See `server/.env.example` for every setting (`PUBLISH_CLIENT_REPORTS`, `TRUST_PROXY`, `STORE`, `RATE_LIMIT_PER_MIN`, ...).
+Real model: create `server/.env` (git-ignored) with `LLM_PROVIDER=anthropic`, `LLM_API_KEY=...`, optional `LLM_MODEL` (default `claude-sonnet-5-5`, chosen by the V-03 eval). See `server/.env.example` for every setting (`PUBLISH_CLIENT_REPORTS`, `TRUST_PROXY`, `STORE`, `RATE_LIMIT_PER_MIN`, ...).
 
 ## 5. How the agents worked (and how you should)
 
@@ -100,7 +102,7 @@ The loop every change went through:
 - **Done means:** `npm test` passes, `npm run typecheck` passes, `npm run build -w @xcavate/extension` works, and the golden verdicts still hold in mock mode (`server/test/fixtures.test.ts`).
 - **Never read form field values** in the extension (a grep test enforces no `.value` in `content/` and `lib/`).
 - **Never send** anything except fields of `AnalyzeRequest` (`AnalyzeRequestSchema` is `.strict()`; `background/api.ts` copies fields one by one).
-- **Model output is untrusted.** Quotes must verify (5+ words, one paragraph, an un-negated category keyword); free text is grounded in `pipeline/ground.ts` or replaced by templates. Never send `temperature` (current Claude models reject sampling parameters); structured output via a hand-written JSON schema, validated with zod.
+- **Model output is untrusted.** Quotes must verify (5+ words, one paragraph, an un-negated category keyword); free text is grounded in `packages/shared/src/engine/ground.ts` or replaced by templates. Never send `temperature` (current Claude models reject sampling parameters); structured output via a hand-written JSON schema, validated with zod.
 - **Security posture:** client POSTs never write the shared per-domain report (only `npm run seed`, or `PUBLISH_CLIENT_REPORTS=true` for a single-user setup). Every `<` in untrusted text is escaped in prompts. The extension's `netguard.ts` blocks private/loopback/link-local targets unless the page itself is local.
 - **Never commit** `.env`, database files, `eval/real/`, `eval/results.md`, `.claude/`, `.impeccable/`. Scan staged files for keys before pushing.
 - **Writing style:** avoid unnecessary em dashes in code comments, docs and commit messages.
@@ -108,37 +110,21 @@ The loop every change went through:
 
 ## 6. Status (2026-11-14)
 
-**Done and pushed:** scaffold and contracts; fixture stores; backend (API, pipeline, LLM client, store, seed, eval, prompt-injection tests); extension (all P0 plus fees, add-ons, trial reminder, cancellation helper, change alerts, settings); README; two independent review rounds with fixes; contract support for the `partial` verdict and per-flag `context` / `rightsNote`. Roughly 450 tests.
+**Done and pushed:** scaffold and contracts; fixture stores; backend (API, pipeline, LLM client, store, seed, eval, prompt-injection tests); extension (all P0 plus fees, add-ons, trial reminder, cancellation helper, change alerts, settings); README; two independent review rounds with fixes; contract support for the `partial` verdict and per-flag `context` / `rightsNote`. 
 
-**Measured so far (offline mock mode, rules only, no real model):** fixtures 5/5 verdicts. 10 real policies: 7/10 verdicts, precision 84%, recall 80%. Caveats: real-world labels were drafted by an AI agent and not yet human-reviewed, and the rules were tuned while looking at those texts, so these are not held-out numbers. **The real model has not been measured yet.**
+**Measured (V-03, 2026-11-14, `npm run eval -- --compare`, 30 s timeout):** fixtures 5/5 verdicts for every configuration. 10 real policies: rules only 7/10 verdicts, precision 84%, recall 80%. Rules + Sonnet 5.5 (the default): 9/10, precision 86%, recall 95%, median 3.3 s, 12/28 model findings dropped by quote verification. Haiku 5.5: 7/10, 76%, 95%, 4.3 s. Opus 5.5: 9/10, 76%, 95%, 5.5 s. Only miss with Sonnet: a news-subscription terms page (expected yellow, got green; cancellation_friction not found by rules or model). Caveats: real-world labels were drafted by an AI agent and not yet human-reviewed, and the rules were tuned while looking at those texts, so these are not held-out numbers.
 
-**In flight when this was written (may already be merged; check `git log`):**
-
-| ID | What | Lane |
-|---|---|---|
-| V-01 | Verdict recalibration: ordinary subscription renewal with online cancel is low, red only for harsh terms; arbitration and data sharing never drive the verdict | Backend |
-| V-02 | `partial` verdict: green only if a terms/refund/subscription policy was read | Backend + Extension |
-| V-03 | Mock reports `usedLlm:false`; `eval --compare` for rules-only vs rules + Claude | Backend |
-| V-05 | Trial card headline: "Free for 7 days, then $14.99/month from <date>" with Remind me and a quoted line on the card | Extension |
-| V-07 | Card fires on plan/pricing pages with a free-trial CTA and a recurring price | Extension |
-| V-08 | "Your rights" note on phone-only cancellation (California auto-renewal law), worded as information | Backend + Extension |
-| V-10 | Shopify fallback policy paths | Extension |
-| V-11 | Send only the domain to the backend | Extension |
-| - | Snapshot retention by age (stops anonymous eviction of old policy versions) | Backend |
-| - | netguard: block IP-embedding hostnames and wrapped IPv6 forms; document accepted redirect risk | Extension |
+**Direction v2 (merged):** recalibrated verdict (V-01: plain renewals with online cancel are low, red needs harsh terms; arbitration and data sharing never drive the verdict), grey "Partly read" state instead of false green (V-02), honest mock + `npm run eval -- --compare` (V-03 code), trial card headline with charge date, Remind me and a quoted line (V-05), card fires on pricing pages (V-07), California rights note on phone-only cancellation (V-08, wording pending owner review), Shopify fallback paths (V-10), domain-only `pageUrl` (V-11), snapshot retention that refuses new versions at the per-URL cap, hardened netguard, on-device rules verdict that the backend report upgrades plus an "AI check" setting that sends nothing when off (V-06, parity-tested against the server). Professional README with screenshots in `.github/assets/`. Real-browser e2e (V-04): 9 Playwright specs pass in headless Chromium with the extension loaded; it found and fixed a stale "ticked for you" card row. About 578 unit tests.
 
 **Open, good places to contribute:**
 
 | ID | What | Notes |
 |---|---|---|
-| V-03 | Run the real model, report rules-only vs rules + Claude side by side, median latency | Needs an API key in `server/.env` |
-| V-04 | Real-browser smoke pass in a fresh Chrome profile over the four fixture stores; automate with Playwright + Chromium `--load-extension` | No agent has loaded the extension in a real browser yet: highest-value check |
 | - | Human review of the real-world labels (`eval/real/labels.json`, local only; ask the owner for the files) | Needed before any accuracy number is quoted |
-| V-06 | Run the rules engine in the extension for an instant, private first verdict (pipeline modules have no Node-only imports) | Upgrade when the backend LLM pass arrives |
 | V-09 | Deploy the backend and ship a packed `.zip` | Deferred by the owner until the tool works end to end |
-| V-12 | Pitch rewrite around proof + action; honest comparison with TermAlert, AgreeGuard and Gemini | After V-03 numbers exist |
+| V-12 | Pitch rewrite around proof + action; honest comparison with TermAlert, AgreeGuard and Gemini | V-03 numbers now exist (section 6) |
 
-**Known limits:** JavaScript-rendered and bot-protected policy pages need the "Scan this page" fallback (common on ticketing and gym sites); DNS rebinding can't be fully stopped by hostname checks (leaked text only reaches the Xcavate backend); English only; no PDFs; Chrome only.
+**Known limits:** JavaScript-rendered and bot-protected policy pages need the "Scan this page" fallback (common on ticketing and gym sites); DNS rebinding can't be fully stopped by hostname checks (leaked text only reaches the Xcavate backend); change alerts rely on client-submitted policy snapshots, so a determined anonymous flood can suppress them for a URL (it cannot fake one: versions are keyed by text hash); the proper fix for both is server-side fetching of policy URLs; English only; no PDFs; Chrome only.
 
 ## 7. Before you start
 

@@ -86,4 +86,22 @@ describe("DarkPatternMarkers", () => {
     expect(markers.count).toBe(0);
     expect(document.getElementById(MARKS_HOST_ID)).toBeNull();
   });
+
+  it("reports the remaining findings when the shopper unticks one, so the card row doesn't go stale", () => {
+    setLiveDocument(loadFixture("gadgetly", "checkout"));
+    const markers = new DarkPatternMarkers(document, "open");
+    const updates: unknown[][] = [];
+    markers.onUpdate = (rest) => updates.push(rest);
+    const hits = findDarkPatterns(document);
+    markers.mark(hits);
+    const protection = hits.find((h) => h.input.id === "protection")!.finding;
+
+    (document.getElementById("protection") as HTMLInputElement).click();
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toHaveLength(hits.length - 1);
+    expect(updates[0]).not.toContain(protection);
+
+    (document.getElementById("tips-once") as HTMLInputElement).click();
+    expect(updates.at(-1)).toEqual([]);
+  });
 });

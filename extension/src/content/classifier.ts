@@ -27,6 +27,8 @@ const PAY_IFRAME = /stripe|braintree|paypal|adyen/i;
 const PAY_BUTTON = /place (your )?order|pay now|complete (purchase|order)|buy now|continue to payment|confirm (and|&) pay/i;
 const SIGNUP_BUTTON = /start (your )?(free )?trial|subscribe|sign up|create account|join now/i;
 const TOTAL = /\btotal\b/i;
+/** V-07 pricing-page call to action: "Start your free trial", "Try it free", "Start trial", "Get started free". */
+const TRIAL_CTA = /start (your |my |a )?(free )?trial|try (it )?(for )?free|get started (for )?free/i;
 
 const BUTTONS = 'button, input[type="submit"], input[type="button"], [role="button"]';
 
@@ -70,11 +72,31 @@ export function classify(doc: Document, url: string): Classification {
 
   // A bare "Subscribe" or "Sign up" (newsletters, comment accounts) is not a purchase. The signup
   // button only counts next to a money signal: a payment signal, a total, a sign-up path, or a plan price.
-  if (texts.some((t) => SIGNUP_BUTTON.test(t)) && (payment || total || pathSignup || PLAN_PRICE.test(pageText(doc))))
-    add(3, "signup-button");
+  const planPrice = PLAN_PRICE.test(pageText(doc));
+  // V-07: plans/pricing pages. A trial CTA (buttons or short links) next to a recurring price or an
+  // "N-day trial" qualifies on its own. Long articles are left out, so a paywall banner on a news
+  // story doesn't turn the story into a sign-up page.
+  const trialCta = planPrice && !articleLike(doc) && hasTrialCta(doc, texts);
+  if ((trialCta || texts.some((t) => SIGNUP_BUTTON.test(t))) && (payment || total || pathSignup || planPrice)) add(3, "signup-button");
+  if (trialCta) add(2, "plan-price");
 
   const pageType: PageType = score >= QUALIFY_SCORE ? (payment ? "checkout" : "signup") : "none";
   return { pageType, score, signals };
+}
+
+function hasTrialCta(doc: Document, buttonTexts: string[]): boolean {
+  if (buttonTexts.some((t) => TRIAL_CTA.test(t))) return true;
+  return Array.from(doc.querySelectorAll("a[href]"))
+    .slice(0, 500)
+    .some((a) => {
+      const t = cleanText(a.textContent ?? "");
+      return t.length > 0 && t.length <= 40 && TRIAL_CTA.test(t);
+    });
+}
+
+function articleLike(doc: Document): boolean {
+  const a = doc.querySelector("article");
+  return !!a && cleanText(a.textContent ?? "").length > 1500;
 }
 
 function pageText(doc: Document): string {
