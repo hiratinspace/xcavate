@@ -31,3 +31,9 @@ For performance or privacy claims, inspect Chrome's service-worker Network tools
 - `XCAVATE_API=http://localhost:8787 npx vitest run --project extension backend.live`: four primary stores through the running backend.
 
 The fixture directory remains at http://localhost:4000/fixtures. Static assets require no CDN or external font. Stop `npm run demo` with Ctrl+C. The extension remains installed but its local backend stops with the rehearsal.
+
+## Opening evidence
+
+The opening asks the audience to think of a grandparent or someone they help online, without claiming that older people are inherently unable to use technology. It then cites one concrete subscription case: the FTC’s September 25, 2025 Amazon Prime settlement included $1.5 billion in consumer redress for an estimated 35 million people affected by unwanted enrollment or delayed cancellation. This is a refund allocation in one settlement, not a measurement of total money lost online or money already paid out.
+
+Source: [FTC settlement announcement](https://www.ftc.gov/news-events/news/press-releases/2025/09/ftc-secures-historic-25-billion-settlement-against-amazon). The source is linked on the opening screen. Keep the opening to 30 seconds; the trial/proof beat now runs from 0:30 to 1:00.
