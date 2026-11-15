@@ -22,7 +22,7 @@ describe("Card", () => {
     card.showReport({ ...SAMPLE_REPORT_RED, trial: undefined });
     const root = card.shadow;
     expect(root.querySelector(".card")?.getAttribute("data-verdict")).toBe("red");
-    expect(root.querySelector(".glyph")?.textContent).toBe("!");
+    expect(root.querySelector<HTMLElement>(".glyph")?.dataset.icon).toBe("red");
     expect(root.querySelector(".word")?.textContent).toBe("Read first");
     expect(root.querySelector(".headline")?.textContent).toBe("3 things to read before you pay");
     expect(root.querySelectorAll(".flag").length).toBe(3);
@@ -39,7 +39,7 @@ describe("Card", () => {
     const unknown: Report = { ...SAMPLE_REPORT_GREEN, verdict: "unknown", policies: [] };
     card.showReport(unknown);
     expect(text(card)).toContain("Scan this page");
-    expect(card.shadow.querySelector(".glyph")?.textContent).toBe("?");
+    expect(card.shadow.querySelector<HTMLElement>(".glyph")?.dataset.icon).toBe("unknown");
   });
 
   it("shows fees, dark patterns and the change strip", () => {

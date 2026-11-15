@@ -1,7 +1,6 @@
 import {
   DISCLAIMER,
   textFragmentUrl,
-  VERDICT_ICON,
   VERDICT_WORD,
   verdictHeadline,
   type DarkPatternFinding,
@@ -10,6 +9,7 @@ import {
   type Report,
 } from "@xcavate/shared/core";
 import cardCss from "./card.css?inline";
+import { icon } from "./icons";
 import { describeExtras, extraFeeCount } from "./fees";
 import { buildTrialReminder, cardFlags, chargeHeadline, linkParts, partialNote, RIGHTS_LABEL, storeName, trialPolicyUrl } from "../lib/actions";
 
@@ -178,15 +178,18 @@ export class Card {
 
     const head = el(d, "div", "head");
     const top = el(d, "div", "top");
-    const glyph = el(d, "span", "glyph", this.state === "checking" ? "…" : VERDICT_ICON[verdict as keyof typeof VERDICT_ICON]);
+    const glyph = el(d, "span", "glyph");
+    glyph.dataset.icon = verdict;
     glyph.setAttribute("aria-hidden", "true");
+    glyph.appendChild(icon(d, verdict));
     top.appendChild(glyph);
     const word = this.state === "checking" ? "Checking the fine print" : VERDICT_WORD[this.report!.verdict];
     top.appendChild(el(d, "span", "word", word));
     const move = button(d, "move", "", "move");
     move.addEventListener("click", () => this.updatePrefs({ side: this.prefs.side === "right" ? "left" : "right" }));
     top.appendChild(move);
-    const close = button(d, "close", "×", "close");
+    const close = button(d, "close", "", "close");
+    close.appendChild(icon(d, "close"));
     close.setAttribute("aria-label", "Close Xcavate card");
     close.addEventListener("click", () => this.dismiss());
     top.appendChild(close);
@@ -324,7 +327,7 @@ export class Card {
     const move = card.querySelector<HTMLElement>(".move");
     if (move) {
       const to = side === "right" ? "left" : "right";
-      move.textContent = side === "right" ? "←" : "→";
+      move.replaceChildren(icon(this.doc, side === "right" ? "left" : "right"));
       move.setAttribute("aria-label", `Move the Xcavate card to the ${to} side`);
       move.title = `Move to the ${to}`;
     }
@@ -333,6 +336,7 @@ export class Card {
   private flagItem(f: Flag, index: number): HTMLElement {
     const d = this.doc;
     const li = el(d, "li", "flag");
+    li.dataset.sev = f.severity;
     const sev = el(d, "span", "sev");
     sev.dataset.sev = f.severity;
     sev.setAttribute("aria-hidden", "true");
@@ -372,12 +376,12 @@ export class Card {
       acts.appendChild(cal);
       bar.appendChild(acts);
       const more = el(d, "div", "remind remind-more");
-      const ics = el(d, "a", "btn", ".ics file") as HTMLAnchorElement;
+      const ics = el(d, "a", "btn", "Download .ics") as HTMLAnchorElement;
       ics.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(reminder.ics);
       ics.download = "xcavate-trial-reminder.ics";
       ics.setAttribute("aria-label", "Download the reminder as an .ics file for any calendar app");
       ics.dataset.xcKey = "ics";
-      more.appendChild(d.createTextNode("Other calendar: "));
+      more.appendChild(d.createTextNode("Not Google Calendar? "));
       more.appendChild(ics);
       wrap.appendChild(more);
     }

@@ -44,6 +44,9 @@ const entries = [
 
 function copyStatic() {
   mkdirSync(join(dist, "icons"), { recursive: true });
+  // Libre Franklin (SIL OFL 1.1, see fonts/OFL.txt): the card and popup face, shipped with the extension.
+  mkdirSync(join(dist, "fonts"), { recursive: true });
+  for (const f of ["libre-franklin-latin.woff2", "libre-franklin-italic-latin.woff2", "OFL.txt"]) copyFileSync(join(here, "fonts", f), join(dist, "fonts", f));
   copyFileSync(join(here, "manifest.json"), join(dist, "manifest.json"));
   copyFileSync(join(here, "src/popup/popup.html"), join(dist, "popup.html"));
   copyFileSync(join(here, "src/popup/popup.css"), join(dist, "popup.css"));

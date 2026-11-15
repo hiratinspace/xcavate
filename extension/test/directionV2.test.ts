@@ -40,7 +40,7 @@ describe("1. V-02 partial verdict", () => {
     card.showReport(PARTIAL);
     const root = card.shadow;
     expect(root.querySelector(".card")?.getAttribute("data-verdict")).toBe("partial");
-    expect(root.querySelector(".glyph")?.textContent).toBe("◐");
+    expect(root.querySelector<HTMLElement>(".glyph")?.dataset.icon).toBe("partial");
     expect(root.querySelector(".word")?.textContent).toBe("Partly read");
     expect(root.querySelector(".coverage")?.textContent).toBe("Couldn't read the terms. Open it and press Scan this page.");
     expect(root.textContent).not.toContain("Looks fair");

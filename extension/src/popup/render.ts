@@ -1,7 +1,6 @@
 import {
   CATEGORY_LABEL,
   DISCLAIMER,
-  VERDICT_ICON,
   VERDICT_WORD,
   textFragmentUrl,
   verdictHeadline,
@@ -23,6 +22,7 @@ import {
   trialPolicyUrl,
 } from "../lib/actions";
 import { formatMoney } from "../lib/money";
+import { icon, type IconName } from "../content/icons";
 
 /** U-03 popup report, U-04 settings, F-03/F-04/F-05 sections. Pure DOM rendering, testable in jsdom. */
 
@@ -175,11 +175,11 @@ export function renderPopup(root: HTMLElement, view: PopupView, actions: PopupAc
 }
 
 function header(view: PopupView, report: Report | undefined, status: string): HTMLElement {
-  let glyph = "·";
+  let glyph: IconName | undefined;
   let word = "Xcavate";
   let headline = "Digs up the fine print before you pay";
   if (report) {
-    glyph = VERDICT_ICON[report.verdict];
+    glyph = report.verdict;
     word = VERDICT_WORD[report.verdict];
     // The shared headline caps at the card's 3 flags; the popup lists every flag, so count them all.
     headline =
@@ -189,11 +189,11 @@ function header(view: PopupView, report: Report | undefined, status: string): HT
           : report.flags.length + " things to read before you pay"
         : verdictHeadline(report);
   } else if (status === "checking") {
-    glyph = "…";
+    glyph = "checking";
     word = "Checking";
     headline = "Reading the fine print";
   } else if (status === "error") {
-    glyph = "?";
+    glyph = "unknown";
     word = "No answer";
     headline = "Couldn't check this site right now";
   }
@@ -205,7 +205,7 @@ function header(view: PopupView, report: Report | undefined, status: string): HT
     h(
       "div",
       { class: "verdict-body" },
-      h("div", { class: "top" }, h("span", { class: "glyph", "aria-hidden": "true" }, glyph), h("span", { class: "word" }, word)),
+      h("div", { class: "top" }, glyph ? h("span", { class: "glyph", "aria-hidden": "true", "data-icon": glyph }, icon(document, glyph)) : h("span", { class: "glyph brand", "aria-hidden": "true" }, icon(document, "mark")), h("span", { class: "word" }, word)),
       h("h1", { role: "status" }, headline),
       view.domain ? h("p", { class: "site" }, view.domain) : null,
     ),
