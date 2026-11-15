@@ -43,7 +43,7 @@ The verdict is always computed in code, never by the model. The model only propo
 | `fixtures/` | Five fictional stores on `*.localhost:4000` plus a cross-origin legal host on `:4001`, `golden.json` (expected verdicts and forbidden categories), `load.ts` test helper. Hosts, routes and planted clauses: `fixtures/README.md`. |
 | `extension/SMOKE_TEST.md` | Manual end-to-end checklist over the fixture stores (V-04). |
 | `e2e/` | Playwright specs that load `extension/dist` in real Chromium against the fixture stores and the mock backend behind a request-counting proxy (V-04). `npm run e2e`; needs ports 4000, 4001, 8787, 8788 free; screenshots go to `test-results/screens/` (git-ignored). Not part of `npm test`. |
-| `docs/` | Planning and pitch material (temporary on GitHub): `plan/` (direction v2), `pitch/` (pitch, submission text, demo script), `research/` (real-site notes, outside critique). `BUILD_PLAN.md` at the root is the original spec referenced by section numbers in code comments. |
+| `docs/`, `BUILD_PLAN.md` | Local only, not in the repo (git-ignored): planning and pitch material and the original spec that code comments cite by section number. Ask the owner if you need them. |
 | `eval/run.ts` | Accuracy script: per-category precision/recall, verdict accuracy, latency. Real-world texts live in `eval/real/` (git-ignored, copyrighted). |
 
 ### Fixture stores (deterministic demo and tests)
