@@ -1,16 +1,7 @@
 import { z } from "zod";
 
-/** Limits from section 6.2. */
-export const LIMITS = {
-  maxPolicies: 4,
-  maxPolicyChars: 200_000,
-  maxBodyBytes: 1_000_000,
-  maxQuoteChars: 300,
-  maxTitleChars: 60,
-  maxSummaryWords: 30,
-  minReadableChars: 500,
-  prefilterMaxChars: 24_000,
-} as const;
+import { LIMITS } from "./limits.js";
+export { LIMITS };
 
 export const CategorySchema = z.enum([
   "auto_renewal",
@@ -36,8 +27,13 @@ const httpUrl = z
   .max(2048)
   .refine((u) => /^https?:\/\//i.test(u), { message: "must be an http(s) URL" });
 
+/** Policy URLs leave the browser without query string or hash (they can carry session ids). */
+const strippedHttpUrl = httpUrl.refine((u) => !u.includes("?") && !u.includes("#"), {
+  message: "url must not include a query string or hash",
+});
+
 export const PolicyInputSchema = z.object({
-  url: httpUrl,
+  url: strippedHttpUrl,
   kind: PolicyKindSchema,
   text: z.string().max(LIMITS.maxPolicyChars, { message: `policy text must be at most ${LIMITS.maxPolicyChars} chars` }),
   previousHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
@@ -62,7 +58,7 @@ export const FlagSchema = z.object({
   summary: z.string(),
   costImpact: z.string().optional(),
   quote: z.string().max(LIMITS.maxQuoteChars),
-  policyUrl: z.string(),
+  policyUrl: z.union([z.literal(""), httpUrl]), // "" for missing_policy
   paragraphIndex: z.number().int(),
   source: z.enum(["llm", "rules", "both"]),
 });
@@ -83,7 +79,7 @@ export const CancellationInfoSchema = z.object({
 });
 
 export const PolicyMetaSchema = z.object({
-  url: z.string(),
+  url: httpUrl,
   kind: PolicyKindSchema,
   textHash: z.string(),
   status: z.enum(["analyzed", "unreadable"]),

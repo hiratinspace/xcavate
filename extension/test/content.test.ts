@@ -113,9 +113,8 @@ describe("content orchestrator (D-06)", () => {
     expect(document.getElementById(CARD_HOST_ID)).toBeNull();
   });
 
-  it("dismissed in this tab → no card on the next run", async () => {
-    sessionStorage.setItem("xcavate:dismissed", "1");
-    const { sent } = setup("streamnest");
+  it("dismissed in this tab (kept by the service worker) → no card on the next run", async () => {
+    const { sent } = setup("streamnest", { PAGE_READY: () => ({ dismissed: true }) });
     startContent(window);
     await vi.waitFor(() => expect(analyzeOf(sent)).toBeDefined());
     expect(document.getElementById(CARD_HOST_ID)).toBeNull();

@@ -3,13 +3,21 @@
  * Handles "$1,299.00", "€12,50", "1.299,00 €", "£4", "-$5.00", "USD 12.00".
  */
 
-const SYMBOLS: Record<string, string> = { $: "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR" };
+const SYMBOLS: Record<string, string> = {
+  $: "USD", "US$": "USD", "C$": "CAD", "CA$": "CAD", "A$": "AUD", "AU$": "AUD", "NZ$": "NZD", "HK$": "HKD", "S$": "SGD",
+  "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR",
+};
 const CODES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "CHF", "NZD"];
 
 const NUM = String.raw`\d{1,3}(?:[.,  ]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?`;
-const SYM = String.raw`[$€£¥₹]|(?:${CODES.join("|")})\b`;
-/** One amount with its currency marker before or after the number. */
-const AMOUNT_SRC = String.raw`([-−–]\s*)?(?:(?:[A-Z]{1,2})?(${SYM})\s?([-−–]\s*)?(${NUM})|(${NUM})\s?(${SYM}))`;
+// Dollar prefixes ("US$", "C$") only when not glued to a preceding word ("TOTAL$12.00" is "$12.00").
+const PRE = String.raw`(?:(?:(?<![A-Za-z])(?:US|CA|AU|NZ|HK|C|A|S))?\$|[€£¥₹]|(?<![A-Za-z])(?:${CODES.join("|")})\b)`;
+const POST = String.raw`(?:[$€£¥₹]|(?:${CODES.join("|")})\b)`;
+/**
+ * One amount: currency before ("$4.95", "€12,50") or after ("12,50 €"). A trailing symbol that is
+ * really the prefix of the next amount ("Qty 2 €12,50") is not taken.
+ */
+const AMOUNT_SRC = String.raw`([-−–]\s*)?(?:(${PRE})\s?([-−–]\s*)?(${NUM})|(${NUM})\s?(${POST})(?!\s?[-−–]?\d))`;
 export const AMOUNT_RE = new RegExp(AMOUNT_SRC, "u");
 const AMOUNT_RE_G = new RegExp(AMOUNT_SRC, "gu");
 
@@ -40,7 +48,7 @@ export function parseNumber(s: string): number {
 }
 
 function currencyOf(marker: string): string {
-  return SYMBOLS[marker] ?? marker.toUpperCase();
+  return SYMBOLS[marker] ?? SYMBOLS[marker.toUpperCase()] ?? marker.toUpperCase();
 }
 
 function toParsed(m: RegExpMatchArray): ParsedAmount {

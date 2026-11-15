@@ -1,4 +1,4 @@
-import type { PageType } from "@xcavate/shared";
+import type { PageType } from "@xcavate/shared/core";
 import { buttonText, cleanText } from "../lib/dom";
 import { hasAmount } from "../lib/money";
 
@@ -15,9 +15,14 @@ export interface Classification {
 
 export const QUALIFY_SCORE = 5;
 
-const PATH_STRONG = /checkout|payment|billing/;
-const PATH_MEDIUM = /cart|basket|subscribe|signup|sign-up|register|join|plans|order/;
-const CARD_NAME = /card|cvv|cvc|expir/i;
+// Whole path segments only (an optional extension like .html/.aspx is allowed), so "/border-crisis",
+// "/cartoons", "/joint-pain" or "/billing-scandal" don't count.
+const PATH_STRONG = new Set(["checkout", "payment", "billing", "pay"]);
+const PATH_MEDIUM = new Set(["cart", "basket", "subscribe", "signup", "sign-up", "sign_up", "register", "join", "plans", "order"]);
+/** Card-field names/ids: cc-*, cardnumber, card-number/card_no, cvv, cvc, csc, exp/expiry(-date|-month|-year). */
+const CARD_NAME = /^(cc[-_ ]?(name|number|num|exp[a-z-]*|csc|cvc|cvv|type)|card[-_ ]?(number|no|num)|cvv\d?|cvc\d?|csc|exp(iry|iration)?([-_ ]?(date|month|year|mm|yy|yyyy))?)$/i;
+/** A price that reads like a plan: "$14.99/month", "€9 per year", "then $5 a week", "free trial … $0". */
+const PLAN_PRICE = /([$€£¥₹]\s?\d[\d.,]*\s*(\/|per|a|every|each)\s*(mo|month|yr|year|week|wk))|(\d+[- ]day (free )?trial)/i;
 const PAY_IFRAME = /stripe|braintree|paypal|adyen/i;
 const PAY_BUTTON = /place (your )?order|pay now|complete (purchase|order)|buy now|continue to payment|confirm (and|&) pay/i;
 const SIGNUP_BUTTON = /start (your )?(free )?trial|subscribe|sign up|create account|join now/i;
@@ -35,14 +40,19 @@ export function classify(doc: Document, url: string): Classification {
     if (isPayment) payment = true;
   };
 
-  let path = "";
+  let segments: string[] = [];
   try {
-    path = new URL(url).pathname.toLowerCase();
+    segments = new URL(url).pathname
+      .toLowerCase()
+      .split("/")
+      .map((seg) => seg.replace(/\.(html?|php|aspx?|jsp)$/, ""))
+      .filter(Boolean);
   } catch {
     /* not a URL: path signals do not fire */
   }
-  if (PATH_STRONG.test(path)) add(3, "path:checkout", true);
-  if (PATH_MEDIUM.test(path)) add(2, "path:signup");
+  if (segments.some((seg) => PATH_STRONG.has(seg))) add(3, "path:checkout", true);
+  const pathSignup = segments.some((seg) => PATH_MEDIUM.has(seg));
+  if (pathSignup) add(2, "path:signup");
 
   if (hasCardField(doc)) add(4, "card-field", true);
 
@@ -54,12 +64,21 @@ export function classify(doc: Document, url: string): Classification {
     .map(buttonText)
     .filter((t) => t.length > 0 && t.length <= 60);
   if (texts.some((t) => PAY_BUTTON.test(t))) add(3, "pay-button", true);
-  if (texts.some((t) => SIGNUP_BUTTON.test(t))) add(3, "signup-button");
 
-  if (hasTotalNearAmount(doc)) add(1, "total-amount");
+  const total = hasTotalNearAmount(doc);
+  if (total) add(1, "total-amount");
+
+  // A bare "Subscribe" or "Sign up" (newsletters, comment accounts) is not a purchase. The signup
+  // button only counts next to a money signal: a payment signal, a total, a sign-up path, or a plan price.
+  if (texts.some((t) => SIGNUP_BUTTON.test(t)) && (payment || total || pathSignup || PLAN_PRICE.test(pageText(doc))))
+    add(3, "signup-button");
 
   const pageType: PageType = score >= QUALIFY_SCORE ? (payment ? "checkout" : "signup") : "none";
   return { pageType, score, signals };
+}
+
+function pageText(doc: Document): string {
+  return (doc.body?.textContent ?? "").slice(0, 50_000);
 }
 
 function hasCardField(doc: Document): boolean {
@@ -67,8 +86,10 @@ function hasCardField(doc: Document): boolean {
   for (const el of Array.from(doc.querySelectorAll("input, select"))) {
     const type = (el.getAttribute("type") ?? "").toLowerCase();
     if (type === "hidden" || type === "checkbox" || type === "radio" || type === "submit" || type === "button") continue;
-    const ident = (el.getAttribute("name") ?? "") + " " + (el.getAttribute("id") ?? "");
-    if (CARD_NAME.test(ident)) return true;
+    for (const attr of ["name", "id"]) {
+      const v = (el.getAttribute(attr) ?? "").trim();
+      if (v && CARD_NAME.test(v)) return true;
+    }
   }
   return false;
 }

@@ -14,7 +14,7 @@ describe("classify (inline HTML)", () => {
   });
 
   it("detects card fields by name/id and payment iframes", () => {
-    expect(classify(htmlDoc(`<input name="card_cvc">`), "https://x.example/").signals).toContain("card-field");
+    expect(classify(htmlDoc(`<input name="card_number">`), "https://x.example/").signals).toContain("card-field");
     expect(classify(htmlDoc(`<iframe src="https://js.stripe.com/v3/elements"></iframe>`), "https://x.example/").signals).toContain("payment-iframe");
   });
 

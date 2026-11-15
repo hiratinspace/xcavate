@@ -1,4 +1,4 @@
-import type { DarkPatternFinding } from "@xcavate/shared";
+import type { DarkPatternFinding } from "@xcavate/shared/core";
 import { controlLabel, visualTarget } from "../lib/dom";
 import { formatMoney, parseAmount } from "../lib/money";
 import { ACCENT_AMBER, INK } from "./tokens";
@@ -20,10 +20,24 @@ export interface DarkPatternHit {
   note: string;
 }
 
+/**
+ * State of each box the first time we saw it. Combined with the `checked` attribute (defaultChecked)
+ * this tells "ticked by the shop" apart from "ticked by the shopper": a box the user ticks later was
+ * first seen unticked, so it is never flagged on a re-run.
+ */
+const firstSeen = new WeakMap<HTMLInputElement, boolean>();
+
+function preselected(input: HTMLInputElement): boolean {
+  if (!firstSeen.has(input)) firstSeen.set(input, input.checked);
+  return input.checked && (input.defaultChecked || firstSeen.get(input) === true);
+}
+
 export function findDarkPatterns(doc: Document): DarkPatternHit[] {
   const hits: DarkPatternHit[] = [];
+  const all = Array.from(doc.querySelectorAll<HTMLInputElement>('input[type="checkbox"], input[type="radio"]'));
+  for (const input of all) preselected(input); // record first-seen state for every box up front
   for (const input of Array.from(doc.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))) {
-    if (!input.checked) continue;
+    if (!preselected(input)) continue;
     const label = controlLabel(input);
     if (!ADDON.test(label)) continue;
     const amount = parseAmount(label);
@@ -31,7 +45,7 @@ export function findDarkPatterns(doc: Document): DarkPatternHit[] {
     hits.push({ finding: { kind: "prechecked_addon", label: label.slice(0, 120) }, input, target: visualTarget(input), note });
   }
   for (const input of Array.from(doc.querySelectorAll<HTMLInputElement>('input[type="radio"]'))) {
-    if (!input.checked) continue;
+    if (!preselected(input)) continue;
     const label = controlLabel(input);
     if (!SUBSCRIPTION.test(label)) continue;
     const name = input.getAttribute("name");
@@ -74,7 +88,8 @@ export class DarkPatternMarkers {
       .mark { position: absolute; box-sizing: border-box; border: 2px solid ${ACCENT_AMBER}; border-radius: 3px; pointer-events: none; }
       .tag { position: absolute; left: -2px; bottom: 100%; margin-bottom: 3px; white-space: nowrap;
         font: 600 11px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; letter-spacing: 0.01em;
-        color: #FFF4D6; background: ${INK}; padding: 2px 6px 2px 5px; border-radius: 3px; border-left: 3px solid ${ACCENT_AMBER}; }`;
+        color: #FFF4D6; background: ${INK}; padding: 2px 6px 2px 5px; border-radius: 3px; border-left: 3px solid ${ACCENT_AMBER};
+        max-width: 260px; overflow: hidden; text-overflow: ellipsis; }`;
     this.root.appendChild(style);
   }
 
@@ -118,6 +133,8 @@ export class DarkPatternMarkers {
     const view = this.doc.defaultView;
     const sx = view?.scrollX ?? 0;
     const sy = view?.scrollY ?? 0;
+    // Never draw past the right edge of the page: that would add a horizontal scrollbar.
+    const maxRight = sx + (this.doc.documentElement.clientWidth || view?.innerWidth || 0);
     for (const [input, { hit, box }] of this.marks) {
       if (!input.isConnected) {
         box.remove();
@@ -125,9 +142,11 @@ export class DarkPatternMarkers {
         continue;
       }
       const r = hit.target.getBoundingClientRect();
-      box.style.left = r.left + sx - 4 + "px";
+      const left = Math.max(0, r.left + sx - 4);
+      const width = maxRight > 0 ? Math.max(0, Math.min(r.width + 8, maxRight - left)) : r.width + 8;
+      box.style.left = left + "px";
       box.style.top = r.top + sy - 4 + "px";
-      box.style.width = r.width + 8 + "px";
+      box.style.width = width + "px";
       box.style.height = r.height + 8 + "px";
       box.style.display = r.width || r.height ? "block" : "none";
     }

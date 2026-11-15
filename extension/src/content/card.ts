@@ -7,7 +7,7 @@ import {
   type FeeSummary,
   type Flag,
   type Report,
-} from "@xcavate/shared";
+} from "@xcavate/shared/core";
 import cardCss from "./card.css?inline";
 import { describeExtras, extraFeeCount } from "./fees";
 
@@ -153,6 +153,8 @@ export class Card {
       } else if (this.report.verdict === "green") {
         body.appendChild(el(d, "p", "empty", "We read " + policyCount(this.report) + " and found no auto-renewals, refund limits or extra fees."));
       }
+      const cov = coverage(this.report);
+      if (cov) body.appendChild(el(d, "p", "note coverage", cov));
       const changes = this.report.changes?.filter((c) => c.bullets.length) ?? [];
       if (changes.length) {
         const p = el(d, "p", "note change");
@@ -231,6 +233,18 @@ function el(d: Document, tag: string, cls: string, text?: string): HTMLElement {
   if (cls) e.className = cls;
   if (text !== undefined) e.textContent = text;
   return e;
+}
+
+const KIND_WORD = { subscription: "subscription terms", refund: "refund policy", terms: "terms", privacy: "privacy policy", other: "this page" } as const;
+
+/** "Read 2 of 3 policies. Couldn't read the terms: open them and press Scan this page." (only when something was unreadable) */
+export function coverage(r: Report): string | undefined {
+  const total = r.policies.length;
+  const unreadable = r.policies.filter((p) => p.status === "unreadable");
+  if (!total || !unreadable.length) return undefined;
+  const read = total - unreadable.length;
+  const names = Array.from(new Set(unreadable.map((p) => KIND_WORD[p.kind]))).join(", ");
+  return `Read ${read} of ${total} ${total === 1 ? "policy" : "policies"}. Couldn't read the ${names}: open ${unreadable.length === 1 ? "it" : "them"} and press Scan this page.`;
 }
 
 function policyCount(r: Report): string {

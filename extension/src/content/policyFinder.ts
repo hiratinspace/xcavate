@@ -1,11 +1,15 @@
-import type { PolicyKind } from "@xcavate/shared";
+import { stripPageUrl, type PolicyKind } from "@xcavate/shared/core";
 import { cleanText } from "../lib/dom";
+import { isFetchAllowed } from "../lib/netguard";
 
 /** D-03 policy link finder (BUILD_PLAN 7.2). */
 
 export interface PolicyLink {
+  /** Identity of the policy: origin + path, no query or hash. This is what is sent, stored and shown. */
   url: string;
   kind: Exclude<PolicyKind, "other">;
+  /** Full URL (query kept, hash dropped) used only to fetch, when it differs from `url`. */
+  fetchUrl?: string;
 }
 
 interface Candidate extends PolicyLink {
@@ -47,6 +51,15 @@ function withoutHash(u: URL): string {
   return c.href;
 }
 
+/** decodeURIComponent that never throws on malformed escapes like /caf%E9 or /50%-off. */
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
 const INLINE = new Set(["A", "SPAN", "STRONG", "B", "EM", "I", "SMALL", "U", "MARK", "SUP", "SUB"]);
 
 /** True when the anchor sits in the "By placing your order you agree to…" sentence (its nearest block). */
@@ -60,8 +73,7 @@ function inAgreeSentence(a: Element): boolean {
 
 /** Every distinct policy-looking link on the page, best first. */
 export function findPolicyCandidates(doc: Document, pageUrl: string): Candidate[] {
-  const page = new URL(pageUrl);
-  const pageKey = withoutHash(page);
+  const pageKey = stripPageUrl(pageUrl);
   const seen = new Map<string, Candidate>();
   let order = 0;
   for (const a of Array.from(doc.querySelectorAll("a[href]"))) {
@@ -76,13 +88,15 @@ export function findPolicyCandidates(doc: Document, pageUrl: string): Candidate[
       continue;
     }
     if (u.protocol !== "http:" && u.protocol !== "https:") continue;
-    const key = withoutHash(u);
+    // Never collect links into the shopper's local network (router pages, intranet) from a public page.
+    if (!isFetchAllowed(u.href, pageUrl)) continue;
+    const key = u.origin + u.pathname; // query + hash dropped: they can carry session ids or emails
     if (key === pageKey) continue;
-    if (u.pathname === "/" && !u.search) continue; // a policy is never the home page (logo links)
+    if (u.pathname === "/") continue; // a policy is never the home page (logo links)
 
     const text = cleanText(a.textContent || a.getAttribute("aria-label") || a.getAttribute("title"));
     let match = text && !NAV_TEXT.test(text) ? kindOf(text) : undefined;
-    if (!match) match = kindOf(decodeURIComponent(u.pathname));
+    if (!match) match = kindOf(safeDecode(u.pathname));
     if (!match) continue;
 
     const agree = inAgreeSentence(a);
@@ -93,7 +107,10 @@ export function findPolicyCandidates(doc: Document, pageUrl: string): Candidate[
       if (match.priority < prev.priority) Object.assign(prev, { kind: match.kind, priority: match.priority });
       continue;
     }
-    seen.set(key, { url: key, kind: match.kind, priority: match.priority, agree, order: order++ });
+    const full = withoutHash(u);
+    const c: Candidate = { url: key, kind: match.kind, priority: match.priority, agree, order: order++ };
+    if (full !== key) c.fetchUrl = full;
+    seen.set(key, c);
   }
   return Array.from(seen.values()).sort(
     (x, y) => Number(y.agree) - Number(x.agree) || x.priority - y.priority || x.order - y.order,
@@ -113,7 +130,7 @@ export function capPolicies(candidates: Candidate[]): PolicyLink[] {
     const n = perKind.get(c.kind) ?? 0;
     if (n >= MAX_PER_KIND) continue;
     perKind.set(c.kind, n + 1);
-    out.push({ url: c.url, kind: c.kind });
+    out.push(c.fetchUrl ? { url: c.url, kind: c.kind, fetchUrl: c.fetchUrl } : { url: c.url, kind: c.kind });
   }
   return out;
 }

@@ -1,4 +1,4 @@
-import { MSG, domainOf, type OkReply, type Settings, type TabState } from "@xcavate/shared";
+import { MSG, domainOf, type OkReply, type Settings, type TabState } from "@xcavate/shared/core";
 import { loadSettings, saveSettings } from "../lib/settings";
 import { renderPopup, type PopupView } from "./render";
 
@@ -12,7 +12,8 @@ async function main() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const tabId = tab?.id;
   let domain: string | undefined;
-  let restricted = false;
+  // No URL means Chrome doesn't let us read this tab (chrome://, the Web Store, file://).
+  let restricted = !tab?.url;
   try {
     if (tab?.url) {
       const u = new URL(tab.url);

@@ -17,12 +17,12 @@ function referencedFiles(m: typeof manifest): string[] {
 }
 
 describe("manifest.json", () => {
-  it("is MV3 with exactly the permissions from section 5", () => {
+  it("is MV3 with the smallest permission set (activeTab dropped: host permissions cover tab.url)", () => {
     expect(manifest.manifest_version).toBe(3);
-    expect(manifest.permissions.sort()).toEqual(["activeTab", "scripting", "storage"]);
+    expect(manifest.permissions.sort()).toEqual(["scripting", "storage"]);
     expect(manifest.host_permissions).toEqual(["<all_urls>"]);
     expect(manifest.background).toEqual({ service_worker: "background.js", type: "module" });
-    expect(manifest.content_scripts[0]).toMatchObject({ matches: ["<all_urls>"], run_at: "document_idle", js: ["content.js"] });
+    expect(manifest.content_scripts[0]).toMatchObject({ matches: ["http://*/*", "https://*/*"], run_at: "document_idle", js: ["content.js"] });
     expect(manifest.action.default_popup).toBe("popup.html");
   });
 

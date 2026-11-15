@@ -5,7 +5,7 @@ import { createHandlers } from "../src/background/handlers";
 import { installChromeMock } from "./chromeMock";
 
 const TAB = 7;
-const sender = { tab: { id: TAB } } as chrome.runtime.MessageSender;
+const sender = { tab: { id: TAB, url: "https://shop.example/checkout" } } as chrome.runtime.MessageSender;
 const DOMAIN = "streamnest.localhost:4000";
 const TEXT = "Your subscription renews automatically each month until you cancel. ".repeat(10);
 
@@ -180,7 +180,7 @@ describe("FETCH_HTML", () => {
   it("fetches with credentials omitted", async () => {
     const fetchImpl = vi.fn(async (_u: string, _i?: RequestInit) => new Response("<p>hi</p>", { headers: { "content-type": "text/html" } }));
     const h = createHandlers({ fetchImpl: fetchImpl as unknown as typeof fetch });
-    const r = await h.handle({ type: MSG.FETCH_HTML, url: "http://legal.localhost:4001/streamnest/terms" }, sender);
+    const r = await h.handle({ type: MSG.FETCH_HTML, url: "https://legal.example/terms" }, sender);
     expect(r).toMatchObject({ ok: true, html: "<p>hi</p>", status: 200 });
     expect(fetchImpl.mock.calls[0][1]?.credentials).toBe("omit");
   });
@@ -188,10 +188,11 @@ describe("FETCH_HTML", () => {
   it("refuses non-http URLs, oversize bodies and errors", async () => {
     const big = "x".repeat(2 * 1024 * 1024 + 10);
     const h = createHandlers({ fetchImpl: (async () => new Response(big, { headers: { "content-type": "text/html" } })) as typeof fetch });
-    expect(await h.fetchHtml("file:///etc/passwd")).toMatchObject({ ok: false });
-    expect(await h.fetchHtml("http://x.example/")).toMatchObject({ ok: false });
+    const tab = "https://shop.example/checkout";
+    expect(await h.fetchHtml("file:///etc/passwd", tab)).toMatchObject({ ok: false });
+    expect(await h.fetchHtml("http://x.example/", tab)).toMatchObject({ ok: false });
     const h404 = createHandlers({ fetchImpl: (async () => new Response("", { status: 404 })) as typeof fetch });
-    expect(await h404.fetchHtml("http://x.example/")).toMatchObject({ ok: false, status: 404 });
+    expect(await h404.fetchHtml("http://x.example/", tab)).toMatchObject({ ok: false, status: 404 });
   });
 
   it("times out after 10 s", async () => {
@@ -199,7 +200,7 @@ describe("FETCH_HTML", () => {
     const fetchImpl = (_u: string, init?: RequestInit) =>
       new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
     const h = createHandlers({ fetchImpl: fetchImpl as unknown as typeof fetch });
-    const p = h.fetchHtml("http://slow.example/");
+    const p = h.fetchHtml("http://slow.example/", "https://shop.example/checkout");
     await vi.advanceTimersByTimeAsync(10_001);
     expect(await p).toMatchObject({ ok: false });
     vi.useRealTimers();

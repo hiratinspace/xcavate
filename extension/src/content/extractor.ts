@@ -1,4 +1,4 @@
-import { LIMITS } from "@xcavate/shared";
+import { LIMITS } from "@xcavate/shared/core";
 
 /**
  * D-04 policy text extraction (BUILD_PLAN 7.3).

@@ -1,4 +1,4 @@
-import type { CancellationInfo, Report, TrialInfo } from "@xcavate/shared";
+import type { CancellationInfo, Report, TrialInfo } from "@xcavate/shared/core";
 
 /**
  * F-03 trial reminder and F-04 cancellation draft (BUILD_PLAN 7.9). No extra permissions:
@@ -29,6 +29,8 @@ export function storeName(domain: string, title = ""): string {
 
 export interface Reminder {
   date: Date;
+  /** Days between the reminder and the first charge (2, or fewer for very short trials). */
+  daysBefore: number;
   title: string;
   details: string;
   calendarUrl: string;
@@ -43,10 +45,15 @@ export function buildTrialReminder(
   today = new Date(),
 ): Reminder | undefined {
   if (!trial?.lengthDays || trial.lengthDays < 1) return undefined;
-  const date = addDays(today, Math.max(0, trial.lengthDays - 2));
+  // Two days before the charge, but never before today: short trials get a reminder today that
+  // states the real number of days left.
+  const offset = Math.max(0, trial.lengthDays - 2);
+  const date = addDays(today, offset);
   const end = addDays(date, 1);
   const chargeDay = addDays(today, trial.lengthDays);
-  const title = `${store} trial ends in 2 days: cancel or keep?`;
+  const daysLeft = trial.lengthDays - offset;
+  const when = daysLeft === 1 ? "tomorrow" : `in ${daysLeft} days`;
+  const title = `${store} trial ends ${when}: cancel or keep?`;
   const price = trial.priceAfter
     ? `After the trial you pay ${trial.priceAfter}${trial.billingPeriod ? " per " + trial.billingPeriod : ""}.`
     : "After the trial you start paying.";
@@ -63,22 +70,34 @@ export function buildTrialReminder(
     "&text=" + encodeURIComponent(title) +
     "&dates=" + ymd(date) + "/" + ymd(end) +
     "&details=" + encodeURIComponent(details);
-  return { date, title, details, calendarUrl, ics: buildIcs(title, details, date, end, today) };
+  return { date, daysBefore: daysLeft, title, details, calendarUrl, ics: buildIcs(title, details, date, end, today) };
 }
 
 function icsEscape(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
 }
 
-/** Lines longer than 75 octets must be folded (RFC 5545 3.1). */
-function fold(line: string): string {
+const utf8 = new TextEncoder();
+
+/**
+ * Lines longer than 75 octets must be folded (RFC 5545 3.1). Counts UTF-8 bytes and only breaks
+ * between code points; continuation lines start with a space, which counts towards their 75.
+ */
+export function fold(line: string): string {
   const out: string[] = [];
-  let rest = line;
-  while (rest.length > 74) {
-    out.push(rest.slice(0, 74));
-    rest = " " + rest.slice(74);
+  let cur = "";
+  let bytes = 0;
+  for (const ch of line) {
+    const n = utf8.encode(ch).length;
+    if (bytes + n > 75) {
+      out.push(cur);
+      cur = " ";
+      bytes = 1;
+    }
+    cur += ch;
+    bytes += n;
   }
-  out.push(rest);
+  out.push(cur);
   return out.join("\r\n");
 }
 

@@ -12,6 +12,7 @@ export const MSG = {
   GET_STATE: "GET_STATE",
   SCAN_TAB: "SCAN_TAB",
   STATUS: "STATUS",
+  SET_DISMISSED: "SET_DISMISSED",
 } as const;
 
 export type Message =
@@ -24,11 +25,19 @@ export type Message =
   | { type: "SCAN_CURRENT_PAGE" }
   | { type: "GET_STATE"; tabId: number }
   | { type: "SCAN_TAB"; tabId: number }
-  /** bg → content: status changed (e.g. error), so the card can hide its "checking" state. */
-  | { type: "STATUS"; status: TabStatus };
+  /**
+   * bg → content: status changed (e.g. error), so the card can hide its "checking" state.
+   * content → bg: the run failed after PAGE_READY (status "error"), so the tab leaves "checking".
+   */
+  | { type: "STATUS"; status: TabStatus }
+  /** content → bg: the user closed (or a scan reopened) the card; remembered per tab + domain. */
+  | { type: "SET_DISMISSED"; dismissed: boolean };
 
-/** paused: extension disabled or site paused (U-04); the content script then does nothing at all. */
-export interface PageReadyReply { report?: Report; paused?: boolean }
+/**
+ * paused: extension disabled or site paused (U-04); the content script then does nothing at all.
+ * dismissed: the user closed the card for this domain in this tab (kept by the service worker, not the page).
+ */
+export interface PageReadyReply { report?: Report; paused?: boolean; dismissed?: boolean }
 export interface FetchHtmlReply { ok: boolean; html?: string; status?: number; finalUrl?: string }
 export interface AnalyzeReply { ok: boolean; report?: Report; error?: string }
 export interface OkReply { ok: boolean; error?: string }

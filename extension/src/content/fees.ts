@@ -1,4 +1,4 @@
-import type { FeeLine, FeeSummary } from "@xcavate/shared";
+import type { FeeLine, FeeSummary } from "@xcavate/shared/core";
 import { cleanText } from "../lib/dom";
 import { formatMoney, parseAllAmounts } from "../lib/money";
 
@@ -10,15 +10,20 @@ import { formatMoney, parseAllAmounts } from "../lib/money";
 const ROW_TAGS = "tr, li, div, p, dl, label, section, span, td, dd";
 const MAX_ROW_CHARS = 90;
 
+/**
+ * Label → kind. Order matters: discounts and fee words are checked before "total"/"tax"/"items",
+ * so "Total savings" is a discount, "Total fees", "Taxes & fees", "Service fee (incl. VAT)" and
+ * "Item protection" are extra fees, and only a bare "Total" (or "Order total", "Amount due") is the total.
+ */
 export function classifyFeeLabel(label: string): FeeLine["kind"] | undefined {
-  const l = label.toLowerCase().trim();
-  if (/^(order |grand |estimated )?total\b|amount due|due today|total due/.test(l)) return "total";
-  if (/\bsub-?total\b|\bitems?\b/.test(l)) return "subtotal";
-  if (/discount|promo|coupon|savings/.test(l)) return "discount";
+  const l = label.toLowerCase().replace(/[()[\]:]/g, " ").replace(/\s+/g, " ").trim();
+  if (/discount|promo|coupon|savings|you save|\bvoucher\b/.test(l)) return "discount";
+  if (/\bfees?\b|surcharge|convenience|processing|service charge|protection|insurance|warranty|\btip\b|\bgratuity\b/.test(l)) return "extra_fee";
+  if (/handling/.test(l) && !/shipping|delivery|postage/.test(l)) return "extra_fee";
+  if (/^(order |grand |estimated )?total( due| [a-z]{3})?$|^amount due\b|^due today\b|^total due today$/.test(l)) return "total";
+  if (/\bsub-?total\b|^items?\b/.test(l)) return "subtotal";
   if (/\btax(es)?\b|\bvat\b|\bgst\b|\bhst\b/.test(l)) return "tax";
-  if (/protection|insurance/.test(l)) return "extra_fee";
   if (/shipping|delivery|postage/.test(l)) return "shipping";
-  if (/\bfees?\b|surcharge|handling|convenience|processing|service charge|\btip\b|warranty/.test(l)) return "extra_fee";
   return undefined;
 }
 

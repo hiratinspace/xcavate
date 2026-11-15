@@ -13,7 +13,12 @@ export interface CappedResult {
 
 export async function fetchCapped(
   url: string,
-  { timeoutMs = FETCH_TIMEOUT_MS, maxBytes = FETCH_MAX_BYTES, fetchImpl = globalThis.fetch } = {},
+  {
+    timeoutMs = FETCH_TIMEOUT_MS,
+    maxBytes = FETCH_MAX_BYTES,
+    fetchImpl = globalThis.fetch,
+    allow = (_u: string) => true,
+  }: { timeoutMs?: number; maxBytes?: number; fetchImpl?: typeof fetch; allow?: (url: string) => boolean } = {},
 ): Promise<CappedResult> {
   let parsed: URL;
   try {
@@ -22,6 +27,7 @@ export async function fetchCapped(
     return { ok: false, error: "bad url" };
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, error: "only http(s)" };
+  if (!allow(parsed.href)) return { ok: false, error: "blocked" };
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -32,6 +38,12 @@ export async function fetchCapped(
       signal: ctrl.signal,
       headers: { Accept: "text/html,application/xhtml+xml,text/plain;q=0.8" },
     });
+    // Re-check where redirects led: a public URL must not bounce us into the local network.
+    // (Service workers cannot inspect each hop; the body of a blocked final hop is never read or returned.)
+    if (res.url && !allow(res.url)) {
+      await res.body?.cancel().catch(() => undefined);
+      return { ok: false, status: res.status, error: "blocked redirect" };
+    }
     if (!res.ok) return { ok: false, status: res.status };
     const type = res.headers.get("content-type") ?? "";
     if (type && !/html|text\/plain|xml/i.test(type)) return { ok: false, status: res.status, error: "not html" };

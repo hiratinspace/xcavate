@@ -10,7 +10,7 @@ import {
   type Report,
   type Settings,
   type TabState,
-} from "@xcavate/shared";
+} from "@xcavate/shared/core";
 import {
   METHOD_WORD,
   buildCancellationMailto,
@@ -134,7 +134,14 @@ export function renderPopup(root: HTMLElement, view: PopupView, actions: PopupAc
   }
 
   parts.push(settingsSection(view, actions));
-  parts.push(h("footer", {}, DISCLAIMER + " Only public policy text and the page address without its query are sent for analysis; fees and ticked boxes stay on your computer."));
+  parts.push(
+    h(
+      "footer",
+      {},
+      DISCLAIMER +
+        " Sent for analysis: the text of the policy pages this site links to, and page addresses without their query. Scan this page sends the text of the page you scan, so Xcavate refuses to scan checkout pages. Fees and ticked boxes stay on your computer.",
+    ),
+  );
 
   const wrap = h("div", { "data-verdict": verdict });
   wrap.append(...(parts.filter(Boolean) as Node[]));
@@ -236,7 +243,11 @@ function reportSections(report: Report, view: PopupView): { lead: HTMLElement[];
         h(
           "div",
           { class: "row" },
-          h("a", { class: "btn", href: reminder.calendarUrl, target: "_blank", rel: "noopener noreferrer" }, "Remind me 2 days before I'm charged"),
+          h(
+            "a",
+            { class: "btn", href: reminder.calendarUrl, target: "_blank", rel: "noopener noreferrer" },
+            reminder.daysBefore === 2 ? "Remind me 2 days before I'm charged" : "Remind me before I'm charged",
+          ),
           h("button", { class: "btn", type: "button", "data-ics": reminder.ics, "data-filename": store.toLowerCase() + "-trial-reminder.ics" }, "Download .ics"),
         ),
         h("p", { class: "warn" }, "Reminder date: " + reminder.date.toDateString() + "."),
@@ -268,11 +279,19 @@ function reportSections(report: Report, view: PopupView): { lead: HTMLElement[];
   }
 
   if (report.policies.length) {
+    const read = report.policies.filter((p) => p.status === "analyzed").length;
+    const unread = report.policies.length - read;
     tail.push(
       h(
         "section",
         {},
         h("h2", {}, "Policies read"),
+        h(
+          "p",
+          { class: unread ? "warn coverage" : "muted coverage" },
+          `Read ${read} of ${report.policies.length} ${report.policies.length === 1 ? "policy" : "policies"}.` +
+            (unread ? " The verdict only covers what was read. Open the others and press Scan this page." : ""),
+        ),
         h(
           "ul",
           { class: "policies" },
@@ -282,7 +301,7 @@ function reportSections(report: Report, view: PopupView): { lead: HTMLElement[];
               {},
               h("span", { class: "kind" }, KIND_WORD[p.kind]),
               h("a", { href: p.url, target: "_blank", rel: "noopener noreferrer" }, shortUrl(p.url)),
-              h("span", { class: "status" }, p.status === "analyzed" ? "read" : "couldn't read"),
+              h("span", { class: "status" }, p.status === "analyzed" ? "read" : "couldn't read: open it, then Scan this page"),
             ),
           ),
         ),

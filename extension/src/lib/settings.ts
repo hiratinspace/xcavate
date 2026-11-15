@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, type Settings } from "@xcavate/shared";
+import { DEFAULT_SETTINGS, type Settings } from "@xcavate/shared/core";
 
 /** Settings live in chrome.storage.local under "settings" (BUILD_PLAN 6.4). Used by the service worker and popup. */
 

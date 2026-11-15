@@ -1,4 +1,4 @@
-import { MSG, type AnalyzeRequest, type FetchHtmlReply, type PageType } from "@xcavate/shared";
+import { MSG, stripPageUrl, type AnalyzeRequest, type FetchHtmlReply, type PageType } from "@xcavate/shared/core";
 import { fetchCapped } from "../lib/fetchCapped";
 import { send } from "../lib/messaging";
 import { buildAnalyzeRequest } from "../lib/request";
@@ -7,29 +7,37 @@ import { capPolicies, findPolicyCandidates, findWellKnown, type PolicyLink } fro
 
 export interface FetchedPage {
   html: string;
-  /** URL after redirects; this is the policy URL sent to the backend and used for "See in policy". */
+  /** URL after redirects. Stripped of query + hash before it is sent or shown. */
   finalUrl: string;
 }
 
-/** Fetch a policy page: same origin directly, other origins through the service worker. */
+async function viaServiceWorker(url: string): Promise<FetchedPage | undefined> {
+  const r = await send<FetchHtmlReply>({ type: MSG.FETCH_HTML, url });
+  return r?.ok && r.html !== undefined ? { html: r.html, finalUrl: r.finalUrl || url } : undefined;
+}
+
+/**
+ * Fetch a policy page: same origin directly, other origins through the service worker (which
+ * applies the SSRF guard). A same-origin URL that redirects to another origin fails in the content
+ * script (CORS), so it falls back to the service worker too.
+ */
 export async function fetchPolicyHtml(url: string, pageUrl: string): Promise<FetchedPage | undefined> {
   if (new URL(url).origin === new URL(pageUrl).origin) {
     const r = await fetchCapped(url);
-    return r.ok && r.html !== undefined ? { html: r.html, finalUrl: cleanFinal(r.finalUrl, url) } : undefined;
+    if (r.ok && r.html !== undefined) return { html: r.html, finalUrl: r.finalUrl || url };
+    if (r.status !== undefined) return undefined; // a real HTTP answer (404, 500): don't retry
   }
-  const r = await send<FetchHtmlReply>({ type: MSG.FETCH_HTML, url });
-  return r?.ok && r.html !== undefined ? { html: r.html, finalUrl: cleanFinal(r.finalUrl, url) } : undefined;
+  return viaServiceWorker(url);
 }
 
-/** Keep the redirect target if it is a valid http(s) URL; drop its hash. */
-function cleanFinal(finalUrl: string | undefined, fallback: string): string {
+/** Policy identity after a redirect: origin + path, no query/hash; the original URL if the target is odd. */
+function identityOf(finalUrl: string | undefined, fallback: string): string {
   try {
     const u = new URL(finalUrl || fallback);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return fallback;
-    u.hash = "";
-    return u.href;
+    if (u.protocol !== "http:" && u.protocol !== "https:") return stripPageUrl(fallback);
+    return stripPageUrl(u.href);
   } catch {
-    return fallback;
+    return stripPageUrl(fallback);
   }
 }
 
@@ -61,6 +69,8 @@ export interface CollectDeps {
   fetchHtml?: (url: string, pageUrl: string) => Promise<FetchedPage | string | undefined>;
   /** Called when the first pass finds no links; resolve when it is worth looking again. */
   settle?: () => Promise<void>;
+  /** Fetched pages by fetch URL, kept across runs on the same page (SPA re-runs refetch nothing). */
+  cache?: Map<string, FetchedPage | undefined>;
 }
 
 function asPage(r: FetchedPage | string | undefined, url: string): FetchedPage | undefined {
@@ -75,25 +85,31 @@ export async function collectPolicies(
   pageType: PageType,
   deps: CollectDeps = {},
 ): Promise<AnalyzeRequest> {
-  const fetchHtml = deps.fetchHtml ?? fetchPolicyHtml;
+  const rawFetch = deps.fetchHtml ?? fetchPolicyHtml;
+  const cache = deps.cache;
+  const fetchPage = async (url: string): Promise<FetchedPage | undefined> => {
+    if (cache?.has(url)) return cache.get(url);
+    const page = asPage(await rawFetch(url, pageUrl).catch(() => undefined), url);
+    cache?.set(url, page);
+    return page;
+  };
+
   let candidates = findPolicyCandidates(doc, pageUrl);
   if (!candidates.length && deps.settle) {
     await deps.settle();
     candidates = findPolicyCandidates(doc, pageUrl);
   }
   let links: PolicyLink[] = capPolicies(candidates);
-  const prefetched = new Map<string, FetchedPage>();
   if (!links.length) {
-    const wk = await findWellKnown(pageUrl, async (u) => asPage(await fetchHtml(u, pageUrl), u)?.html);
+    const wk = await findWellKnown(pageUrl, async (u) => (await fetchPage(u))?.html);
     links = wk.map((w) => w.link);
-    for (const w of wk) prefetched.set(w.link.url, { html: w.html, finalUrl: w.link.url });
   }
   const fetched = await Promise.all(
     links.map(async (l) => {
-      const page = prefetched.get(l.url) ?? asPage(await fetchHtml(l.url, pageUrl).catch(() => undefined), l.url);
+      const page = await fetchPage(l.fetchUrl ?? l.url);
       const ex = page ? extractFromHtml(page.html) : { text: "", readable: false };
       // Unreadable policies go with empty text so the backend can report them as "unreadable".
-      return { url: page?.finalUrl ?? l.url, kind: l.kind, text: ex.readable ? ex.text : "" };
+      return { url: identityOf(page?.finalUrl, l.url), kind: l.kind, text: ex.readable ? ex.text : "" };
     }),
   );
   // Two links can redirect to the same document: keep the first.

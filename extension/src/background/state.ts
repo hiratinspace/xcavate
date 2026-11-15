@@ -10,6 +10,8 @@ import { REPORT_TTL_MS, type DarkPatternFinding, type FeeSummary, type PageType,
 
 export interface StoredTab {
   status: TabStatus;
+  /** Query-less URL of the page this state belongs to; a late reply for another page is dropped. */
+  pageUrl?: string;
   domain?: string;
   pageType?: PageType;
   fees?: FeeSummary;
@@ -43,14 +45,61 @@ export async function saveReport(report: Report, now = Date.now()): Promise<void
   await chrome.storage.local.set({ [reportKey(report.domain)]: { report, savedAt: now } });
 }
 
+/** Policy URLs are stored without query or hash (they can carry session ids). */
+function policyKey(url: string): string {
+  try {
+    const u = new URL(url);
+    return hashKey(u.origin + u.pathname);
+  } catch {
+    return hashKey(url);
+  }
+}
+
+export const MAX_POLICY_HASHES = 500;
+const HASH_INDEX = "hashIndex";
+
 export async function getPolicyHash(url: string): Promise<string | undefined> {
-  const got = await chrome.storage.local.get(hashKey(url));
-  const h = got?.[hashKey(url)];
+  const key = policyKey(url);
+  const got = await chrome.storage.local.get(key);
+  const h = got?.[key];
   return typeof h === "string" ? h : undefined;
 }
 
+/** Remember a policy's last textHash; keeps the newest MAX_POLICY_HASHES and evicts the oldest. */
 export async function setPolicyHash(url: string, hash: string): Promise<void> {
-  await chrome.storage.local.set({ [hashKey(url)]: hash });
+  const key = policyKey(url);
+  const got = await chrome.storage.local.get(HASH_INDEX);
+  const index = (Array.isArray(got?.[HASH_INDEX]) ? (got[HASH_INDEX] as string[]) : []).filter((k) => k !== key);
+  index.push(key);
+  const evict = index.length > MAX_POLICY_HASHES ? index.splice(0, index.length - MAX_POLICY_HASHES) : [];
+  await chrome.storage.local.set({ [key]: hash, [HASH_INDEX]: index });
+  if (evict.length) await chrome.storage.local.remove(evict);
+}
+
+const dismissKey = (tabId: number) => "dismiss:" + tabId;
+
+/** Domains whose card the user closed in this tab (chrome.storage.session, out of the page's reach). */
+export async function isDismissed(tabId: number, domain: string): Promise<boolean> {
+  const list = await sessionGet<string[]>(dismissKey(tabId));
+  return Array.isArray(list) && list.includes(domain);
+}
+
+export async function setDismissed(tabId: number, domain: string, dismissed: boolean): Promise<void> {
+  const list = new Set((await sessionGet<string[]>(dismissKey(tabId))) ?? []);
+  if (dismissed) list.add(domain);
+  else list.delete(domain);
+  await sessionSet(dismissKey(tabId), Array.from(list));
+}
+
+async function sessionGet<T>(key: string): Promise<T | undefined> {
+  const area = session();
+  return (area ? (await area.get(key))?.[key] : memorySession.get(key)) as T | undefined;
+}
+
+async function sessionSet(key: string, value: unknown): Promise<void> {
+  const area = session();
+  if (area) await area.set({ [key]: value });
+  else memorySession.set(key, value);
 }
 
 export async function getTab(tabId: number): Promise<StoredTab> {
@@ -74,8 +123,8 @@ export async function patchTab(tabId: number, patch: Partial<StoredTab>): Promis
 }
 
 export async function clearTab(tabId: number): Promise<void> {
-  const key = tabKey(tabId);
+  const keys = [tabKey(tabId), dismissKey(tabId)];
   const area = session();
-  if (area) await area.remove(key);
-  else memorySession.delete(key);
+  if (area) await area.remove(keys);
+  else keys.forEach((k) => memorySession.delete(k));
 }
