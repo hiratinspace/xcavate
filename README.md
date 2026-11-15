@@ -40,7 +40,7 @@ Xcavate never blocks, clicks or fills anything at checkout. A clean site gets a 
 
 ## Quick start (about 10 minutes)
 
-**You need:** Node.js 22 or newer (the server uses the built-in `node:sqlite`; 22.13+ has it without a flag) and Google Chrome 116 or newer.
+**You need:** Node.js 22 or newer and Google Chrome 116 or newer. The server stores its cache with the built-in `node:sqlite` (Node 22.13+ or 23.4+); on older Node it falls back to an in-memory store saved to a JSON file, so everything still works.
 
 ```bash
 git clone https://github.com/hiratinspace/xcavate.git && cd xcavate
