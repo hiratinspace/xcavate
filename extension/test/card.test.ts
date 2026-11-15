@@ -62,7 +62,7 @@ describe("Card", () => {
     expect(text(card)).not.toContain("Fees added");
   });
 
-  it("close button and Escape dismiss it and report the dismissal", () => {
+  it("close button and Escape (with focus in the card) dismiss it and report the dismissal", () => {
     const onDismiss = vi.fn();
     const card = new Card(document, { shadowMode: "open", onDismiss });
     card.showReport(SAMPLE_REPORT_RED);
@@ -71,6 +71,7 @@ describe("Card", () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
 
     card.showReport(SAMPLE_REPORT_RED);
+    (card.shadow.querySelector("button") as HTMLButtonElement).focus();
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(card.current).toBe("hidden");
     expect(onDismiss).toHaveBeenCalledTimes(2);
@@ -109,5 +110,16 @@ describe("Card", () => {
     card.showReport(evil);
     expect(card.shadow.querySelector("img")).toBeNull();
     expect(text(card)).toContain("<img src=x onerror=alert(1)>");
+  });
+});
+
+describe("Card quick-check label (real-site retest G5)", () => {
+  it("labels an on-device verdict as a quick check while the AI review runs, and drops the label for the final report", () => {
+    const card = new Card(document, { shadowMode: "open" });
+    card.showReport(SAMPLE_REPORT_RED, { provisional: true });
+    expect(card.shadow.querySelector(".site")?.textContent).toContain("Quick check, AI review running");
+    card.showReport(SAMPLE_REPORT_RED);
+    expect(card.shadow.querySelector(".site")?.textContent).not.toContain("Quick check");
+    card.hide();
   });
 });

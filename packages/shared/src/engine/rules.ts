@@ -483,7 +483,7 @@ const PATTERNS: Pattern[] = [
   {
     category: "no_refund",
     rule: "final-sale",
-    re: /\b(all (sales|purchases|payments|orders) (are )?(final|non-?refundable)|no refunds?\b(?! (is|are) (needed|required))|non-?refundable|no money[- ]back|(will|do|does|shall|cannot|can't|won't) not? ?(be )?(issue|give|provide|offer|receive|grant|eligible for|entitled to)\w* (a |any )?(refund|money back)|(do|does|will|shall|won't|don't|doesn't) (not )?refund\b|refunds? (are|is|will be) not (available|offered|provided|issued|given|possible)|not (be )?(eligible|entitled) (for|to) (a |any )?refunds?|we do not (offer|issue|give|provide) refunds?)/,
+    re: /\b(all (sales|purchases|payments|orders) (are )?(final|non-?refundable)|no refunds?\b(?! (is|are) (needed|required))|non-?refundable|no money[- ]back|(will|do|does|shall|cannot|can't|won't) not? ?(be )?(issue|give|provide|offer|receive|grant|eligible for|entitled to)\w* (a |any )?(refund|money back)|(do|does|will|shall) not refund\b|(won't|don't|doesn't) refund\b|refunds? (are|is|will be) not (available|offered|provided|issued|given|possible)|not (be )?(eligible|entitled) (for|to) (a |any )?refunds?|we do not (offer|issue|give|provide) refunds?)/,
     negatable: false,
     // "Shipping charges are non-refundable" on its own is normal; do not call it a no-refund policy.
     when: (c) => {

@@ -328,6 +328,10 @@ describe("11. Dismissal is kept by the service worker, not the page", () => {
     sessionStorage.clear();
     const { sent } = content("streamnest", "checkout", "/checkout");
     await vi.waitFor(() => expect(sent.some((m) => m.type === "ANALYZE")).toBe(true));
+    // Escape only dismisses with focus in the card (the shadow root is closed, so focus the host).
+    const host = document.getElementById(CARD_HOST_ID) as HTMLElement;
+    host.tabIndex = -1;
+    host.focus();
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(sent).toContainEqual({ type: "SET_DISMISSED", dismissed: true });
     expect(sessionStorage.length).toBe(0);
@@ -390,5 +394,30 @@ describe("15. Coverage is stated honestly", () => {
     renderPopup(root, { settings: DEFAULT_SETTINGS, state: { status: "ready", report: partial } }, { scan() {}, setEnabled() {}, setPaused() {}, saveApiBase() {}, downloadIcs() {} });
     expect(root.textContent).toContain("Read 2 of 3 policies.");
     expect(root.textContent).toContain("couldn't read: open it, then Scan this page");
+  });
+});
+
+describe("Real-site retest: form changes and Show card", () => {
+  it("a form added on the same address keeps the card and sends no new PAGE_READY or ANALYZE", async () => {
+    const { sent } = content("streamnest", "checkout", "/checkout");
+    await vi.waitFor(() => expect(sent.some((m) => m.type === "ANALYZE")).toBe(true));
+    await vi.waitFor(() => expect(document.getElementById(CARD_HOST_ID)).not.toBeNull());
+    const before = sent.filter((m) => m.type === "PAGE_READY" || m.type === "ANALYZE").length;
+    const f = document.createElement("form");
+    f.innerHTML = "<input type=search aria-label=search>";
+    document.body.appendChild(f); // a newsletter or search widget appears
+    await new Promise((r) => setTimeout(r, 4200)); // past the watcher's debounce and minimum gap
+    expect(sent.filter((m) => m.type === "PAGE_READY" || m.type === "ANALYZE").length).toBe(before);
+    expect(document.getElementById(CARD_HOST_ID)).not.toBeNull();
+  }, 10_000);
+
+  it("SHOW_CARD from the popup undoes a dismissal and re-runs", async () => {
+    const { mock, sent } = content("streamnest", "checkout", "/checkout");
+    await vi.waitFor(() => expect(sent.some((m) => m.type === "ANALYZE")).toBe(true));
+    const sendResponse = vi.fn();
+    mock.listeners[0]({ type: "SHOW_CARD" }, {}, sendResponse);
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+    expect(sent).toContainEqual({ type: "SET_DISMISSED", dismissed: false });
+    await vi.waitFor(() => expect(sent.filter((m) => m.type === "PAGE_READY").length).toBeGreaterThan(1));
   });
 });

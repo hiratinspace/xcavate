@@ -46,6 +46,8 @@ export interface PopupActions {
   saveApiBase(v: string): void;
   /** V-06 "AI check" setting. Optional so older callers keep working. */
   setAiCheck?(v: boolean): void;
+  /** Bring the card back on the page (after the shopper closed it). */
+  showCard?(): void;
   downloadIcs(filename: string, ics: string): void;
 }
 
@@ -148,7 +150,7 @@ export function renderPopup(root: HTMLElement, view: PopupView, actions: PopupAc
         "section",
         {},
         h("p", { class: "muted" }, "Have a policy page open that Xcavate couldn't fetch? Scan reads the page you see."),
-        h("div", { class: "row" }, scan),
+        h("div", { class: "row" }, scan, ...showCardButton(state, actions)),
       ),
     );
   }
@@ -429,4 +431,12 @@ function shortUrl(u: string): string {
   } catch {
     return u;
   }
+}
+
+/** "Show card on page": only when there is a verdict for this page and the popup can reach it. */
+function showCardButton(state: TabState | undefined, actions: PopupActions): HTMLElement[] {
+  if (!actions.showCard || !state?.report || state.status !== "ready") return [];
+  const b = h("button", { class: "btn", type: "button" }, "Show card on page");
+  b.addEventListener("click", () => actions.showCard?.());
+  return [b];
 }

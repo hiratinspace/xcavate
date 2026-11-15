@@ -63,6 +63,9 @@ async function main() {
         if (pollTimer) clearTimeout(pollTimer);
         pollTimer = setTimeout(refresh, POLL_MS);
       },
+      showCard: () => {
+        if (tabId !== undefined) void chrome.tabs.sendMessage(tabId, { type: MSG.SHOW_CARD }).catch(() => undefined);
+      },
       setEnabled: (v) => void updateSettings({ enabled: v }),
       setPaused: (v) => {
         if (!domain) return;

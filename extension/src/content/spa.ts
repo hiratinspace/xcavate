@@ -11,7 +11,8 @@ export interface WatchOptions {
   navDelayMs?: number;
 }
 
-export function watchNavigation(win: Window, onChange: () => void, opts: WatchOptions = {}): () => void {
+/** `urlChanged` is false when only the number of forms changed on the same address. */
+export function watchNavigation(win: Window, onChange: (urlChanged: boolean) => void, opts: WatchOptions = {}): () => void {
   const debounceMs = opts.debounceMs ?? 800;
   const minGapMs = opts.minGapMs ?? 3000;
   const navDelayMs = opts.navDelayMs ?? 300;
@@ -31,9 +32,10 @@ export function watchNavigation(win: Window, onChange: () => void, opts: WatchOp
     }
     const s = signature();
     if (s === last) return;
+    const urlChanged = s.split("|")[0] !== last.split("|")[0];
     last = s;
     lastRun = Date.now();
-    onChange();
+    onChange(urlChanged);
   };
   // Trailing timer that is not pushed back by later mutations, so a page that mutates
   // constantly (a ticking clock) still gets checked, at most once per minGapMs.

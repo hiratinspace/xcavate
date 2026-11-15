@@ -357,7 +357,7 @@ describe("item 10: slow policy pages", () => {
     window.__xcavateLoaded = false;
     startContent(window);
     await vi.advanceTimersByTimeAsync(EARLY_VERDICT_MS + 100);
-    await vi.waitFor(() => expect(show).toHaveBeenCalledWith(expect.objectContaining({ verdict: "green" })));
+    await vi.waitFor(() => expect(show).toHaveBeenCalledWith(expect.objectContaining({ verdict: "green" }), { provisional: true }));
     const pre = sent.find((m) => m.type === "ANALYZE" && m.preliminary) as Extract<Message, { type: "ANALYZE" }>;
     expect(pre.request.policies.some((p) => p.text)).toBe(true);
     expect(pre.request.policies.some((p) => !p.text)).toBe(true);
@@ -397,5 +397,20 @@ describe("item 9: hydrated pages are re-classified", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     await vi.waitFor(() => expect(ready().some((m) => m.pageType !== "none")).toBe(true));
     document.getElementById(CARD_HOST_ID)?.remove();
+  });
+});
+
+describe("real-site retest fixes (Escape, form changes)", () => {
+  it("Escape outside the card does not dismiss it (pages use Escape for their own menus and modals)", async () => {
+    const { Card } = await import("../src/content/card");
+    document.body.innerHTML = "<button id=menu>Menu</button>";
+    let dismissed = 0;
+    const card = new Card(document, { onDismiss: () => dismissed++ });
+    card.showChecking("shop.example.com");
+    (document.getElementById("menu") as HTMLButtonElement).focus();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(dismissed).toBe(0);
+    expect(card.current).toBe("checking");
+    card.hide();
   });
 });

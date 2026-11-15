@@ -10,13 +10,16 @@ import {
 import type { DarkPatternFinding } from "@xcavate/shared/core";
 import { send } from "../lib/messaging";
 import { buildAnalyzeRequest } from "../lib/request";
-import { CARD_HOST_ID, Card } from "./card";
+import { CARD_HOST_ID, Card, type CardPrefs } from "./card";
 import { classify, watchForLateQualify } from "./classifier";
 import { collectPolicies, waitForDomQuiet, type FetchedPage } from "./collect";
 import { DarkPatternMarkers, MARKS_HOST_ID, findDarkPatterns } from "./darkPatterns";
 import { extractLiveDocument } from "./extractor";
 import { detectFees } from "./fees";
 import { watchNavigation } from "./spa";
+
+/** Card layout preference (expanded, corner) in chrome.storage.local. */
+const CARD_PREFS_KEY = "cardPrefs";
 
 /**
  * D-06 content orchestrator: classify → PAGE_READY → find → fetch → ANALYZE → card.
@@ -46,7 +49,18 @@ export function startContent(win: Window = window): void {
       dismissed = true;
       void send({ type: MSG.SET_DISMISSED, dismissed: true });
     },
+    // Expanded/collapsed and corner are the shopper's choice: kept in extension storage (never page
+    // storage the shop could read or edit) so they survive reloads and other sites.
+    onPrefsChange: (prefs) => {
+      void chrome.storage?.local?.set({ [CARD_PREFS_KEY]: prefs }).catch(() => undefined);
+    },
   });
+  void Promise.resolve(chrome.storage?.local?.get(CARD_PREFS_KEY))
+    .then((r) => {
+      const prefs = (r as Record<string, unknown> | undefined)?.[CARD_PREFS_KEY] as Partial<CardPrefs> | undefined;
+      if (prefs && typeof prefs === "object") card.setPrefs({ expanded: prefs.expanded === true, side: prefs.side === "left" ? "left" : "right" });
+    })
+    .catch(() => undefined);
   let markers: DarkPatternMarkers | undefined;
   let gen = 0;
   /** Fetched policy pages, kept for the life of this page so SPA re-runs refetch nothing. */
@@ -56,6 +70,8 @@ export function startContent(win: Window = window): void {
   /** Page (origin + path) this script's card is showing checking or a verdict for; "" when none. */
   let activePage = "";
   let localChecksActive = false;
+  /** Page whose full analysis (the ANALYZE round trip, AI included) is in flight; "" when none. */
+  let analyzing = "";
   let localRefreshPending = false;
 
   const clearMarkers = () => {
@@ -105,7 +121,7 @@ export function startContent(win: Window = window): void {
       const some = partial?.policies.some((p) => p.text) && partial.policies.some((p) => !p.text);
       if (partial && some && !done && my === gen) {
         const res = await send<AnalyzeReply>({ type: MSG.ANALYZE, request: partial, page: pageKey, preliminary: true });
-        if (res?.ok && res.report && !done && my === gen && !dismissed && card.current === "checking") card.showReport(res.report);
+        if (res?.ok && res.report && !done && my === gen && !dismissed && card.current === "checking") card.showReport(res.report, { provisional: true });
       }
     }
     return full;
@@ -154,9 +170,15 @@ export function startContent(win: Window = window): void {
       const request = await collect(my, url, pageKey, cls.pageType);
       if (my !== gen) return;
       const msg = { type: MSG.ANALYZE, request, page: pageKey } as const;
-      let res = await send<AnalyzeReply>(msg);
-      // No reply at all: Chrome stopped the worker mid-analysis. Ask the new worker once.
-      if (res === undefined && my === gen) res = await send<AnalyzeReply>(msg);
+      analyzing = pageKey;
+      let res: AnalyzeReply | undefined;
+      try {
+        res = await send<AnalyzeReply>(msg);
+        // No reply at all: Chrome stopped the worker mid-analysis. Ask the new worker once.
+        if (res === undefined && my === gen) res = await send<AnalyzeReply>(msg);
+      } finally {
+        if (analyzing === pageKey) analyzing = "";
+      }
       if (my !== gen) return;
       if (res?.ok && res.report) {
         analyzedFor = pageKey;
@@ -211,12 +233,24 @@ export function startContent(win: Window = window): void {
         sendResponse({ ok: true });
         return false;
       }
+      case MSG.SHOW_CARD: {
+        // The shopper asked for the card again from the popup: undo the dismissal and re-run (the
+        // worker answers from its stored report, so nothing new is fetched or sent).
+        dismissed = false;
+        void send({ type: MSG.SET_DISMISSED, dismissed: false });
+        safeRun();
+        sendResponse({ ok: true });
+        return false;
+      }
       case MSG.REPORT: {
         // Only for the page on screen, and only while this run is still checking or showing a verdict
         // for it: a late reply after the shopper moved on (or closed the card) is dropped.
         const here = stripPageUrl(win.location.href);
         const live = card.current === "checking" || card.current === "report";
-        if (!dismissed && live && msg.page === here && msg.page === activePage) card.showReport(msg.report);
+        // An on-device result while the AI review is still running is labelled as a quick check, so
+        // the later AI verdict reads as an upgrade rather than a glitch.
+        if (!dismissed && live && msg.page === here && msg.page === activePage)
+          card.showReport(msg.report, { provisional: analyzing === msg.page && !msg.report.stats.usedLlm });
         return false;
       }
       case MSG.STATUS:
@@ -247,7 +281,22 @@ export function startContent(win: Window = window): void {
       hideCard();
       void send({ type: MSG.STATUS, status: "error" });
     });
-  watchNavigation(win, safeRun);
+  /**
+   * Same address, different number of forms (a chat widget, newsletter pop-up or search box came or
+   * went). This is not a navigation: a card already on screen keeps its verdict and only the local
+   * fee and add-on checks re-run; a page without a card is re-classified in place, and a running
+   * late re-check (hydrated pricing tables) is left alone instead of being cancelled.
+   */
+  const onFormsChanged = () => {
+    const pageKey = stripPageUrl(win.location.href);
+    if (activePage === pageKey && card.current !== "hidden") {
+      if (localChecksActive) runLocalChecks();
+      return;
+    }
+    if (activePage === pageKey) return; // shopper closed the card on this page: stay closed
+    if (classify(doc, win.location.href).pageType !== "none") safeRun();
+  };
+  watchNavigation(win, (urlChanged) => (urlChanged ? safeRun() : onFormsChanged()));
   safeRun();
 }
 

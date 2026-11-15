@@ -13,6 +13,8 @@ export const MSG = {
   SCAN_TAB: "SCAN_TAB",
   STATUS: "STATUS",
   SET_DISMISSED: "SET_DISMISSED",
+  /** Popup -> content script: bring the card back after the shopper closed it on this site. */
+  SHOW_CARD: "SHOW_CARD",
 } as const;
 
 export type Message =
@@ -41,7 +43,8 @@ export type Message =
    */
   | { type: "STATUS"; status: TabStatus }
   /** content → bg: the user closed (or a scan reopened) the card; remembered per tab + domain. */
-  | { type: "SET_DISMISSED"; dismissed: boolean };
+  | { type: "SET_DISMISSED"; dismissed: boolean }
+  | { type: "SHOW_CARD" };
 
 /**
  * paused: extension disabled or site paused (U-04); the content script then does nothing at all.

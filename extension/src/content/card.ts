@@ -61,6 +61,8 @@ export class Card {
   private root: ShadowRoot;
   private state: CardState = "hidden";
   private domain = "";
+  /** The verdict on screen is the on-device quick check and the AI review is still running. */
+  private provisional = false;
   private report: Report | undefined;
   private local: LocalFindings = {};
   /** The headline node last rendered; kept across a same-verdict update so nothing is re-announced. */
@@ -104,6 +106,7 @@ export class Card {
 
   showChecking(domain: string): void {
     this.inPlace = false;
+    this.provisional = false;
     this.domain = domain;
     this.report = undefined;
     this.state = "checking";
@@ -115,8 +118,9 @@ export class Card {
    * verdict, then the backend's), the card updates in place: same headline node, no re-announcement.
    * A different verdict re-renders with the normal role=status announcement.
    */
-  showReport(report: Report): void {
+  showReport(report: Report, opts: { provisional?: boolean } = {}): void {
     this.inPlace = this.state === "report" && this.host.isConnected && this.report?.verdict === report.verdict;
+    this.provisional = opts.provisional === true;
     this.report = report;
     this.domain = report.domain;
     this.state = "report";
@@ -145,10 +149,9 @@ export class Card {
 
   private handleKey(e: KeyboardEvent): void {
     if (e.key !== "Escape" || this.state === "hidden") return;
-    const active = this.doc.activeElement as HTMLElement | null;
-    const inCard = active === this.host;
-    const editing = !!active && (/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) || active.isContentEditable);
-    if (inCard || !editing) this.dismiss();
+    // Only when the shopper is inside the card: pages use Escape for their own menus, modals and
+    // cookie banners, and a dismissal hides the card for the whole site in this tab.
+    if (this.doc.activeElement === this.host) this.dismiss();
   }
 
   private render(): void {
@@ -208,7 +211,7 @@ export class Card {
     }
     this.headlineEl = h;
     head.appendChild(h);
-    if (this.domain) head.appendChild(el(d, "p", "site", this.domain));
+    if (this.domain) head.appendChild(el(d, "p", "site", this.provisional && this.state === "report" ? this.domain + " · Quick check, AI review running" : this.domain));
     body.appendChild(head);
 
     // Always visible, in both states: the trial reminder (the action that matters), the toggle
