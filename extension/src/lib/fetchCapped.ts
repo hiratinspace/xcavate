@@ -1,6 +1,11 @@
 /** fetch with a timeout and a byte cap. Used by the service worker (FETCH_HTML) and same-origin content fetches. */
 
-export const FETCH_TIMEOUT_MS = 10_000;
+/**
+ * Per attempt. A policy page that has not answered in 4 s is very likely stuck (a heavy retailer page);
+ * the content script then tries once through the service worker, and the verdict is shown from
+ * whatever arrived instead of waiting.
+ */
+export const FETCH_TIMEOUT_MS = 4_000;
 export const FETCH_MAX_BYTES = 2 * 1024 * 1024;
 
 export interface CappedResult {

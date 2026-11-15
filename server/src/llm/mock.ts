@@ -30,6 +30,8 @@ export class MockLlm implements LlmClient {
     const cancel = extractCancellation(paragraphs);
     return {
       findings,
+      // The mock is the rules engine: it has no independent opinion on the rules candidates.
+      rulesReview: [],
       trial: trial
         ? {
             lengthDays: trial.lengthDays ?? null,

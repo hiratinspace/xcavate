@@ -59,7 +59,7 @@ export const PRIVACY_LINE_LOCAL =
 /** V-06: one quiet line when the report shown was worked out on this device. */
 export const LOCAL_CHECK_NOTE = {
   pending: "Checked on your device. The AI check is still running.",
-  unavailable: "Checked on your device (AI check unavailable).",
+  unavailable: "AI check unavailable, showing the on-device result.",
   off: "Checked on your device (AI check off).",
 } as const;
 

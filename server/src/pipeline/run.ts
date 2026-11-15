@@ -26,9 +26,10 @@ import type { CachedAnalysis, Store } from "../store/store.js";
  * Bump whenever rules, prompts or merging change in a way that changes reports, so cached
  * analyses from an older pipeline are never served (part of the cache key).
  */
-export const PIPELINE_VERSION = 3;
+export const PIPELINE_VERSION = 4;
 
-export const DEFAULT_DEADLINE_MS = 12_000;
+/** Matches DEFAULT_LLM_TIMEOUT_MS in config.ts (the app passes the configured value). */
+export const DEFAULT_DEADLINE_MS = 20_000;
 
 export interface PipelineDeps {
   store: Store;

@@ -8,12 +8,12 @@ import type { Category } from "./types.js";
 export const KEYWORDS: Record<Exclude<Category, "missing_policy">, string[]> = {
   auto_renewal: ["auto-renew", "automatically renew", "auto renew", "renews automatically", "renewal", "recurring", "until you cancel", "until cancelled", "until canceled", "each billing period", "billing cycle"],
   trial_converts: ["free trial", "trial period", "trial ends", "end of the trial", "end of your trial", "after the trial", "introductory", "promotional period", "converts"],
-  cancellation_friction: ["cancel", "cancellation", "notice", "written notice", "by phone", "telephone", "call us", "certified mail", "customer support", "contact us to"],
+  cancellation_friction: ["cancel", "cancellation", "notice", "written notice", "by phone", "telephone", "call us", "certified mail", "customer support", "contact us to", "terminate your", "termination of your", "by calling", "customer care", "customer service", "in writing", "by mail", "postal mail"],
   termination_fee: ["early termination", "termination fee", "cancellation fee", "exit fee", "remaining months", "remainder of the term", "liquidated damages"],
-  no_refund: ["refund", "non-refundable", "nonrefundable", "all sales final", "all sales are final", "store credit", "money back", "money-back"],
-  return_cost: ["restocking", "return shipping", "return postage", "returns", "return label", "return the item"],
-  price_change: ["change the price", "change our prices", "price change", "modify the price", "adjust the price", "prices are subject to change", "increase the price", "pricing may change", "new price"],
+  no_refund: ["refund", "non-refundable", "nonrefundable", "all sales final", "all sales are final", "store credit", "money back", "money-back", "do not refund"],
+  return_cost: ["restocking", "return shipping", "return postage", "returns", "return label", "return the item", "return fee", "deducted from your refund"],
+  price_change: ["change the price", "change our prices", "price change", "modify the price", "adjust the price", "prices are subject to change", "increase the price", "pricing may change", "new price", "change our pricing", "change the pricing", "adjust prices", "price of our service", "price increase", "raise the price", "raise prices"],
   extra_fees: ["service fee", "processing fee", "convenience fee", "handling fee", "administrative fee", "surcharge", "booking fee", "platform fee"],
-  arbitration: ["arbitration", "arbitrate", "class action", "class-action", "jury trial", "waive your right"],
+  arbitration: ["arbitration", "arbitrate", "class action", "class-action", "jury trial", "waive your right", "binding individual arbitration", "class action procedures", "waive any right"],
   data_sharing: ["sell your", "sell personal", "share your", "third part", "advertising partners", "data broker", "personal information", "personal data"],
 };

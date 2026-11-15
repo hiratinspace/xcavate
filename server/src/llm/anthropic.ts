@@ -10,6 +10,17 @@ import { CHANGE_BULLETS_JSON_SCHEMA, LLM_OUTPUT_JSON_SCHEMA } from "./schema.js"
 /** Room for adaptive thinking plus the JSON answer; Haiku 5.5 can spend thousands of tokens thinking. */
 export const ANALYZE_MAX_TOKENS = 16_000;
 export const CHANGE_MAX_TOKENS = 4_096;
+/**
+ * The app-level retry (invalid or truncated output) only starts when at least this much of the
+ * deadline is left (or half the deadline, for short test deadlines): a retry that cannot finish
+ * just delays the rules-only fallback.
+ */
+export const MIN_RETRY_MS = 6_000;
+/**
+ * SDK retries cover transient 429/5xx/connection errors with a short backoff. One is enough
+ * inside a 20 s budget; more would eat the time the answer itself needs.
+ */
+export const SDK_MAX_RETRIES = 1;
 
 export interface AnthropicOptions {
   apiKey: string;
@@ -23,8 +34,8 @@ export interface AnthropicOptions {
 /**
  * Claude via the official SDK with structured outputs (output_config.format).
  * No temperature/top_p/top_k (current models reject them), no prefill, no thinking
- * config (adaptive by default); effort "low" for latency. One retry on invalid or truncated output;
- * an overall deadline of timeoutMs covers both attempts.
+ * config (adaptive by default); effort "low" for latency. One retry on invalid or truncated output
+ * when enough time is left (MIN_RETRY_MS); an overall deadline of timeoutMs covers SDK retries and both attempts.
  */
 export class AnthropicLlm implements LlmClient {
   readonly provider = "anthropic" as const;
@@ -37,7 +48,7 @@ export class AnthropicLlm implements LlmClient {
     this.client = new Anthropic({
       apiKey: opts.apiKey,
       timeout: opts.timeoutMs,
-      maxRetries: 1,
+      maxRetries: SDK_MAX_RETRIES,
       ...(opts.fetch ? { fetch: opts.fetch } : {}),
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
     });
@@ -67,7 +78,9 @@ export class AnthropicLlm implements LlmClient {
     maxTokens: number,
     callOpts?: LlmCallOptions,
   ): Promise<T> {
+    const started = Date.now();
     const deadline = AbortSignal.timeout(this.opts.timeoutMs);
+    const minRetryMs = Math.min(MIN_RETRY_MS, this.opts.timeoutMs / 2);
     const signal = callOpts?.signal ? AbortSignal.any([deadline, callOpts.signal]) : deadline;
     let lastError: LlmError | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -78,6 +91,8 @@ export class AnthropicLlm implements LlmClient {
         // Retry once, and only for output we could not use (invalid, or cut off at max_tokens because
         // adaptive thinking used the budget); timeouts and API errors fall back at once.
         if ((err.kind !== "invalid_output" && err.kind !== "max_tokens") || signal.aborted) throw err;
+        // Not enough time left for a second full answer: fall back now.
+        if (this.opts.timeoutMs - (Date.now() - started) < minRetryMs) throw err;
         lastError = err;
       }
     }

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fetching data | Widgetkit docs (fictional)</title><style>body{margin:0;font:16px/1.5 system-ui,sans-serif;color:#1d1d1f;background:#fafafa}header,footer{background:#222;color:#fff;padding:14px 24px}header a,footer a{color:#fff;margin-right:16px}main{max-width:980px;margin:32px auto;padding:0 20px}.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}.tier{background:#fff;border:1px solid #ddd;border-radius:10px;padding:20px}.price{font-size:28px;font-weight:700}.btn{display:inline-block;background:#3346d3;color:#fff;border-radius:8px;padding:10px 18px;text-decoration:none}</style></head>
+<body>
+  <!-- Real-world negative: a documentation page with "Get started" and "Sign up" buttons and no price. -->
+  <header><strong>Widgetkit docs</strong> <nav aria-label="Docs"><a href="/docs">Docs</a><a href="/signup">Sign up</a></nav></header>
+  <main>
+    <h1>Fetching data</h1>
+    <p>Widgetkit components can load data from any HTTP endpoint. Pass a URL to the source property and the component handles caching and retries.</p>
+    <p><a class="btn" href="/docs/getting-started">Get started</a> <button type="button" class="btn">Copy example</button></p>
+    <pre>const list = widget.source("/api/items");</pre>
+    <p>Requests time out after 30 seconds. Errors surface through the onError callback.</p>
+  </main>
+  <footer><a href="/terms">Terms</a><a href="/privacy">Privacy</a><span>Widgetkit is fictional, for testing only.</span></footer>
+</body>
+</html>

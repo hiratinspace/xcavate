@@ -66,14 +66,20 @@ describe("PAGE_READY", () => {
     expect(mock.badges.get(TAB)?.text).toBe("!4");
   });
 
-  it("expired cache → tries GET /v1/report (F-06) and shows it", async () => {
+  it("expired cache → tries GET /v1/report (F-06) without holding up the card, then pushes it", async () => {
     await mock.local.set({ ["report:" + DOMAIN]: { report: SAMPLE_REPORT_RED, savedAt: 0 } });
     const fetchImpl = vi.fn(async () => jsonResponse({ ...SAMPLE_REPORT_GREEN, domain: DOMAIN, cached: true }));
     const h = createHandlers({ fetchImpl: fetchImpl as unknown as typeof fetch, now: () => REPORT_TTL_MS + 10 });
     const r = await h.pageReady({ type: "PAGE_READY", pageType: "signup", score: 9, url: "http://streamnest.localhost:4000/checkout" }, TAB);
+    // The reply comes at once (the card shows "checking"); the shared report follows as REPORT.
+    expect(r.report).toBeUndefined();
     expect(fetchImpl).toHaveBeenCalledWith("http://localhost:8787/v1/report?domain=streamnest.localhost%3A4000", expect.anything());
-    expect(r.report?.verdict).toBe("green");
-    expect(mock.badges.get(TAB)?.text).toBe("✓");
+    await vi.waitFor(() => expect(mock.badges.get(TAB)?.text).toBe("✓"));
+    expect(mock.chrome.tabs.sendMessage).toHaveBeenCalledWith(
+      TAB,
+      expect.objectContaining({ type: "REPORT", page: "http://streamnest.localhost:4000/checkout", report: expect.objectContaining({ verdict: "green" }) }),
+    );
+    expect(mock.session.data()["tab:" + TAB]).toMatchObject({ status: "ready" });
   });
 
   it("backend lookup 404 → no report, checking badge", async () => {

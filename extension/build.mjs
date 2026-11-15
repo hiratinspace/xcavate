@@ -19,7 +19,7 @@ const inlineCss = {
       namespace: "inline-css",
     }));
     build.onLoad({ filter: /.*/, namespace: "inline-css" }, (args) => ({
-      contents: readFileSync(args.path, "utf8"),
+      contents: watchMode ? readFileSync(args.path, "utf8") : esbuild.transformSync(readFileSync(args.path, "utf8"), { loader: "css", minify: true }).code,
       loader: "text",
       watchFiles: [args.path],
     }));

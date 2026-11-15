@@ -21,7 +21,8 @@ describe("shared cache poisoning", () => {
       { pageUrl: "https://realshop.example/checkout", pageType: "checkout", linksFound: 1, policies: [{ url: "https://realshop.example/terms", kind: "terms", text: FAKE_CLEAN }] },
       { store, llm: new MockLlm(), publishShared: true },
     );
-    expect(store.getLatestReport("realshop.example")?.verdict).toBe("green");
+    // Published; the text states no money terms, so the verdict is partial, not green (direction v3).
+    expect(store.getLatestReport("realshop.example")?.verdict).toBe("partial");
   });
 });
 

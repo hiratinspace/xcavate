@@ -30,12 +30,17 @@ function isOnlinePage(pageUrl: string): boolean {
   return /^https?:\/\//i.test(pageUrl);
 }
 
-/** A cancellation_friction flag that says phone or mail is the only way to cancel. */
+/**
+ * A cancellation_friction flag where a cancellation sentence itself names phone or mail as the way
+ * to cancel (direction v3): the flag's own quote, or the cancellation quote when the extracted method
+ * is phone or mail. A method with no quote, or a quote where the channel is about something else
+ * ("delivery switches to mail", "written notice"), never earns the note.
+ */
 function phoneOrMailOnly(flag: Flag, report: Pick<Report, "cancellation">): boolean {
   if (flag.category !== "cancellation_friction") return false;
   if (isPhoneOrMailOnly(flag.quote)) return true;
-  const m = report.cancellation?.method;
-  return (m === "phone" || m === "mail") && (!report.cancellation?.quote || isPhoneOrMailOnly(report.cancellation.quote));
+  const c = report.cancellation;
+  return (c?.method === "phone" || c?.method === "mail") && Boolean(c.quote) && isPhoneOrMailOnly(c.quote as string);
 }
 
 /**

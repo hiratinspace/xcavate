@@ -21,7 +21,7 @@ export function verdictHeadline(report: Pick<Report, "verdict" | "flags">): stri
     case "green":
       return "No money traps found in the terms";
     case "partial":
-      return "No money traps in what we could read, but we couldn't read the terms or refund policy.";
+      return "No money traps in what we read, but those pages don't cover billing or refunds.";
     case "unknown":
       return "Couldn't read this site's terms. Open them and press Scan this page.";
   }

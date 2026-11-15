@@ -24,6 +24,12 @@ export interface StoredTab {
   localReport?: Report;
   /** How far the AI check got for `localReport` (see TabState.localCheck). */
   localCheck?: LocalCheck;
+  /** A manual scan ("Scan this page") is running; a re-injected content script's PAGE_READY must not end it. */
+  scanning?: boolean;
+  /** When the tab entered "checking" (ms); a check that never finished is closed on read. */
+  checkingSince?: number;
+  /** Id of the worker instance that set "checking"; another id means that worker was stopped mid-check. */
+  owner?: string;
 }
 
 const reportKey = (domain: string) => "report:" + domain;
@@ -109,6 +115,39 @@ async function sessionSet(key: string, value: unknown): Promise<void> {
   else memorySession.set(key, value);
 }
 
+/**
+ * Per-tab write queue. Every read-modify-write of a tab's state runs here one after the other,
+ * so two handlers (LOCAL_FINDINGS and the final "ready" write, say) can't both read the old value
+ * and lose each other's fields. Plain getTab reads are not queued.
+ */
+const tabQueues = new Map<number, Promise<unknown>>();
+
+export function withTabLock<T>(tabId: number, fn: () => Promise<T>): Promise<T> {
+  const prev = tabQueues.get(tabId) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const tail = run.catch(() => undefined);
+  tabQueues.set(tabId, tail);
+  void tail.then(() => {
+    if (tabQueues.get(tabId) === tail) tabQueues.delete(tabId);
+  });
+  return run;
+}
+
+/**
+ * Atomic update: `fn` gets the current state and returns the next one, or undefined to leave it
+ * unchanged. Resolves to the state written (or undefined when nothing was written).
+ */
+export function updateTab(
+  tabId: number,
+  fn: (cur: StoredTab) => StoredTab | undefined | Promise<StoredTab | undefined>,
+): Promise<StoredTab | undefined> {
+  return withTabLock(tabId, async () => {
+    const next = await fn(await getTab(tabId));
+    if (next) await writeTab(tabId, next);
+    return next;
+  });
+}
+
 export async function getTab(tabId: number): Promise<StoredTab> {
   const key = tabKey(tabId);
   const area = session();
@@ -116,22 +155,26 @@ export async function getTab(tabId: number): Promise<StoredTab> {
   return (v as StoredTab | undefined) ?? { status: "idle" };
 }
 
-export async function setTab(tabId: number, value: StoredTab): Promise<void> {
+async function writeTab(tabId: number, value: StoredTab): Promise<void> {
   const key = tabKey(tabId);
   const area = session();
   if (area) await area.set({ [key]: value });
   else memorySession.set(key, value);
 }
 
-export async function patchTab(tabId: number, patch: Partial<StoredTab>): Promise<StoredTab> {
-  const next = { ...(await getTab(tabId)), ...patch };
-  await setTab(tabId, next);
-  return next;
+export function setTab(tabId: number, value: StoredTab): Promise<void> {
+  return withTabLock(tabId, () => writeTab(tabId, value));
 }
 
-export async function clearTab(tabId: number): Promise<void> {
-  const keys = [tabKey(tabId), dismissKey(tabId)];
-  const area = session();
-  if (area) await area.remove(keys);
-  else keys.forEach((k) => memorySession.delete(k));
+export async function patchTab(tabId: number, patch: Partial<StoredTab>): Promise<StoredTab> {
+  return (await updateTab(tabId, (cur) => ({ ...cur, ...patch })))!;
+}
+
+export function clearTab(tabId: number): Promise<void> {
+  return withTabLock(tabId, async () => {
+    const keys = [tabKey(tabId), dismissKey(tabId)];
+    const area = session();
+    if (area) await area.remove(keys);
+    else keys.forEach((k) => memorySession.delete(k));
+  });
 }

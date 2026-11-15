@@ -1,6 +1,6 @@
 import { CATEGORY_LABEL, CATEGORY_MEANING, KEYWORDS, normalizeForMatch } from "../core.js";
 import type { Category } from "../core.js";
-import { isNegated } from "./rules.js";
+import { isNegated, outOfScopeForCategory } from "./rules.js";
 import { NUM, findMoney, lpNormalize, toNumber } from "./textutil.js";
 
 /**
@@ -142,6 +142,9 @@ export function templateText(category: Category): { title: string; summary: stri
   };
 }
 
+const PRICE_CHANGE_EVIDENCE =
+  /\b(may|can|reserve the right to|have the right to|are entitled to|will) (change|modify|adjust|increase|raise|update)\b[^.;:]{0,60}?\b(prices?|pricing|fees|rates|charges)\b/;
+
 const POSITIVE_REFUND = /\b(full|100%|complete) refund|refund in full|money-back guarantee|no questions asked|free returns?\b/;
 const NEGATIVE_REFUND = /\b(no|not|non-?|never|final|only|credit|forfeit|withh(e|o)ld|except|exclud)/;
 
@@ -159,7 +162,7 @@ export function quoteSupportsCategory(category: Exclude<Category, "missing_polic
     let i = q.indexOf(k);
     while (i >= 0) {
       // no_refund keywords are negative by nature ("no refunds"), so negation does not cancel them.
-      if (category === "no_refund" || !isNegated(q, i, i + k.length)) {
+      if (category === "no_refund" || !isNegated(q, i, i + k.length, category)) {
         supported = true;
         break;
       }
@@ -167,8 +170,15 @@ export function quoteSupportsCategory(category: Exclude<Category, "missing_polic
     }
     if (supported) break;
   }
+  // "We reserve the right to change ... the price": a change verb close to a price word, not negated.
+  if (!supported && category === "price_change") {
+    const m = PRICE_CHANGE_EVIDENCE.exec(q);
+    supported = Boolean(m) && !isNegated(q, m!.index, m!.index + m![0].length, category);
+  }
   if (!supported) return false;
   if (category === "no_refund" && POSITIVE_REFUND.test(q) && !NEGATIVE_REFUND.test(q)) return false;
+  // Same scope gates as the rules: a story, a plan-switch refund rule, a bank's fee, a denial.
+  if (outOfScopeForCategory(category, q)) return false;
   return true;
 }
 

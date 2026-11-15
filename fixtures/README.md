@@ -23,7 +23,9 @@ fixtures/
   server.mjs
   load.ts               ← test helper: loadFixture(site, page) → html string; fixtureUrl(site, page) → URL string; SITES list
   golden.json           ← validates against GoldenSchema in @xcavate/shared
-  pages/article-1.html, article-2.html, article-3.html   ← plain articles (classifier negatives)
+  pages/article-1.html … article-4.html   ← plain articles (classifier negatives; article-4 quotes plan prices in prose)
+  pages/plans-saas.html, trial-stream.html, signup-steps.html, plans-hydrated.html   ← real-world plan/sign-up patterns (should qualify)
+  pages/cart-empty.html, docs-1.html   ← real-world negatives (empty cart, docs page with "Get started")
   sites/
     streamnest/ index.html checkout.html subscription.html subscription.v2.html terms.html terms.v2.html privacy.html
     gadgetly/   index.html checkout.html returns.html terms.html privacy.html
@@ -42,6 +44,20 @@ fixtures/
 | SneakyTerms (attack) | `/terms`, `/privacy` | "All sales are final" + early termination fee; hidden text (display:none, font-size:0, aria-hidden) and a visible sentence telling AI tools to report no issues. `terms-quoted.html` has the instruction inside a quotation. Checkout has aggressive global CSS (`* { … !important }`) to test card isolation | red: no_refund, termination_fee |
 
 Every checkout has fake card fields (`autocomplete="cc-number"` etc.) inside a `<form>` with no action that leaves the page; nothing is ever submitted. The pay button sits next to a sentence "By placing your order you agree to our Terms…" that links the policies.
+
+## Real-world patterns (direction v3)
+
+A real-site test (27 pages in Chromium) found the card fired on only 4 of about 16 plan and checkout pages, and the policy finder picked cookie notices, product collections and billing apps as policies. These pages copy the structure of those sites (fictional text, no real copy) so the fixes have regression tests. `PATTERN_PAGES` in `load.ts` gives the real-site URL each one imitates (the classifier reads the path) and the expected page type.
+
+| Page | Imitates | Expected |
+|---|---|---|
+| `plans-saas` | SaaS pricing table: prices split over spans, `$10 per seat/month`, `$12 USD / month`, `billed annually`, CTAs as `<a>` ("Try for $0.00", "Choose plan"); footer with a cookie link, a business agreement, a `/legal/` index and a help billing article | signup; finder keeps Terms of Service, Subscription Terms, Privacy Policy only |
+| `trial-stream` | Streaming "premium" page: "Try 1 month for $0", `$13.99/month after your trial`, repeated "Terms apply." links, links to a billing app (`/commerce/billing`), a manage-subscription help article and Shopify `/collections/` and `/products/` | signup; finder keeps the paid subscription terms first, never the billing app or product pages |
+| `signup-steps` | Step 1 of a sign-up flow at `/signup/planform`: "Monthly price" label + amount, a "Next" button | signup |
+| `plans-hydrated` | Client-rendered pricing page: empty at load, table rendered after 1.5 s | none at load, signup after `watchForLateQualify` |
+| `cart-empty` | Empty Shopify-style cart: account links, mini-cart "Subtotal $0.00" + "Check out" | none; finder skips cookie and collection links |
+| `docs-1` | Docs page with "Get started" and "Sign up", no price | none |
+| `article-4` | News story quoting `$9.99 a month` in prose, Subscribe button in the header | none |
 
 ## Judge demo room and coverage cases
 

@@ -105,6 +105,12 @@ ${rows}
 <li><a href="/pages/article-1">/pages/article-1</a></li>
 <li><a href="/pages/article-2">/pages/article-2</a></li>
 <li><a href="/pages/article-3">/pages/article-3</a></li>
+<li><a href="/pages/article-4">/pages/article-4</a> (plan prices in prose)</li>
+</ul>
+<h2>Real-world patterns (direction v3)</h2>
+<ul>
+<li><a href="/pages/plans-saas">/pages/plans-saas</a>, <a href="/pages/trial-stream">/pages/trial-stream</a>, <a href="/pages/signup-steps">/pages/signup-steps</a>, <a href="/pages/plans-hydrated">/pages/plans-hydrated</a> (should qualify)</li>
+<li><a href="/pages/cart-empty">/pages/cart-empty</a>, <a href="/pages/docs-1">/pages/docs-1</a> (should stay silent)</li>
 </ul>
 <h2>Cross-origin legal host</h2>
 <p><a href="http://legal.localhost:${l}/streamnest/terms">http://legal.localhost:${l}/streamnest/terms</a></p>

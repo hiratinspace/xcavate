@@ -13,12 +13,19 @@
  * Compare mode (V-03): `npm run eval -- --compare` or EVAL_COMPARE=1 runs every case twice,
  * rules only and rules + the configured model, and prints both side by side with the
  * per-case verdict differences. Without a real provider and key, the model column is skipped.
+ *
+ * Repeats (direction v3): `--runs N` (or EVAL_RUNS=N) runs every model case N times and reports the
+ * mean and spread of verdict accuracy, precision and recall, plus p50/p90/p95 latency and how many
+ * calls fell back to rules (timeouts counted separately). The mock is deterministic, so it runs once.
+ *
+ * Severity: where a label has `expectedSeverity`, each matched category's severity is scored
+ * (agreement, plus how often we were harsher or milder). Otherwise the severity distribution is shown.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CATEGORY_ORDER, GoldenSchema, stripPageUrl } from "@xcavate/shared";
-import type { AnalyzeRequest, Category, PolicyKind, Report, Verdict } from "@xcavate/shared";
+import type { AnalyzeRequest, Category, PolicyKind, Report, Severity, Verdict } from "@xcavate/shared";
 import { z } from "zod";
 import { FIXTURES_DIR } from "../fixtures/load.js";
 import { buildRequest, caseById } from "../server/scripts/fixtureRequests.js";
@@ -38,6 +45,13 @@ loadEnv();
 const config = loadConfig();
 const llm = createLlm(config);
 const COMPARE = process.argv.includes("--compare") || /^(1|true|yes)$/i.test(process.env.EVAL_COMPARE ?? "");
+function runsArg(): number {
+  const i = process.argv.indexOf("--runs");
+  const raw = i >= 0 ? process.argv[i + 1] : process.env.EVAL_RUNS;
+  const n = Number.parseInt(raw ?? "1", 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 10) : 1;
+}
+const RUNS = runsArg();
 
 /** "anthropic, model claude-..." or "mock (offline: rules engine only, no model)". */
 function providerLabel(client: LlmClient): string {
@@ -57,6 +71,8 @@ interface Case {
   expected: Category[];
   forbidden?: Category[];
   verdict: Verdict;
+  /** Expected severity per category, when the label states one. */
+  severity?: Partial<Record<Category, Severity>>;
 }
 
 interface Outcome {
@@ -86,8 +102,11 @@ const RealItem = z.object({
   file: z.string(),
   expectedCategories: z.array(z.string()),
   expectedVerdict: z.string(),
+  expectedSeverity: z.record(z.string()).optional(),
   evidence: z.unknown().optional(),
 });
+
+const SEVERITIES: Severity[] = ["high", "medium", "low"];
 
 const KINDS: PolicyKind[] = ["subscription", "refund", "terms", "privacy", "other"];
 
@@ -120,6 +139,11 @@ function realCases(): { cases: Case[]; skipped: string[] } | undefined {
       request: { pageUrl, pageType: "none", linksFound: 1, policies: [{ url: pageUrl, kind, text }] },
       expected: cats,
       verdict,
+      severity: Object.fromEntries(
+        Object.entries(it.expectedSeverity ?? {}).filter(
+          (e): e is [Category, Severity] => (CATEGORY_ORDER as readonly string[]).includes(e[0]) && (SEVERITIES as string[]).includes(e[1]),
+        ),
+      ),
     });
   }
   return { cases, skipped };
@@ -141,8 +165,10 @@ async function run(cases: Case[], client: LlmClient): Promise<Outcome[]> {
 
 interface Metrics {
   n: number;
-  perCategory: { category: Category; tp: number; fp: number; fn: number }[];
+  perCategory: { category: Category; tp: number; fp: number; fn: number; sevAgree: number; sevHarsher: number; sevMilder: number; dist: Record<Severity, number> }[];
   micro: { tp: number; fp: number; fn: number };
+  /** Severity scored on matched categories that have a labelled severity. */
+  sev: { scored: number; agree: number; harsher: number; milder: number };
   verdictCorrect: number;
   dropped: number;
   modelKept: number;
@@ -151,8 +177,20 @@ interface Metrics {
   forbiddenHits: string[];
 }
 
+const RANK: Record<Severity, number> = { high: 3, medium: 2, low: 1 };
+
 function score(outcomes: Outcome[]): Metrics {
-  const perCategory = CATEGORY_ORDER.map((category) => ({ category, tp: 0, fp: 0, fn: 0 }));
+  const perCategory = CATEGORY_ORDER.map((category) => ({
+    category,
+    tp: 0,
+    fp: 0,
+    fn: 0,
+    sevAgree: 0,
+    sevHarsher: 0,
+    sevMilder: 0,
+    dist: { high: 0, medium: 0, low: 0 } as Record<Severity, number>,
+  }));
+  const sev = { scored: 0, agree: 0, harsher: 0, milder: 0 };
   const forbiddenHits: string[] = [];
   let verdictCorrect = 0;
   let dropped = 0;
@@ -165,6 +203,15 @@ function score(outcomes: Outcome[]): Metrics {
       if (got.has(row.category) && want.has(row.category)) row.tp++;
       else if (got.has(row.category)) row.fp++;
       else if (want.has(row.category)) row.fn++;
+      const flag = report.flags.find((f) => f.category === row.category);
+      if (flag) row.dist[flag.severity]++;
+      const exp = c.severity?.[row.category];
+      if (flag && exp && want.has(row.category)) {
+        sev.scored++;
+        if (flag.severity === exp) (row.sevAgree++, sev.agree++);
+        else if (RANK[flag.severity] > RANK[exp]) (row.sevHarsher++, sev.harsher++);
+        else (row.sevMilder++, sev.milder++);
+      }
     }
     for (const f of c.forbidden ?? []) if (got.has(f)) forbiddenHits.push(c.id + ":" + f);
     if (report.verdict === c.verdict) verdictCorrect++;
@@ -176,8 +223,21 @@ function score(outcomes: Outcome[]): Metrics {
   const mid = Math.floor(ms.length / 2);
   const medianMs = ms.length === 0 ? 0 : ms.length % 2 ? ms[mid] : (ms[mid - 1] + ms[mid]) / 2;
   const micro = perCategory.reduce((a, r) => ({ tp: a.tp + r.tp, fp: a.fp + r.fp, fn: a.fn + r.fn }), { tp: 0, fp: 0, fn: 0 });
-  return { n: outcomes.length, perCategory, micro, verdictCorrect, dropped, modelKept, medianMs, usedLlm, forbiddenHits };
+  return { n: outcomes.length, perCategory, micro, sev, verdictCorrect, dropped, modelKept, medianMs, usedLlm, forbiddenHits };
 }
+
+/** Nearest-rank percentile of a list of numbers. */
+function percentile(xs: number[], p: number): number {
+  if (xs.length === 0) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.max(0, Math.ceil((p / 100) * s.length) - 1))];
+}
+
+const sevLine = (m: Metrics) =>
+  m.sev.scored === 0
+    ? "Severity: no labelled severities."
+    : `Severity agreement on matched categories: ${m.sev.agree}/${m.sev.scored} (${pct(m.sev.agree, m.sev.scored)}); harsher ${m.sev.harsher}, milder ${m.sev.milder}.`;
+const distText = (d: Record<Severity, number>) => SEVERITIES.filter((s) => d[s]).map((s) => s[0].toUpperCase() + d[s]).join(" ") || "-";
 
 const pct = (num: number, den: number) => (den === 0 ? "n/a" : ((100 * num) / den).toFixed(0) + "%");
 
@@ -196,9 +256,14 @@ function tables(title: string, outcomes: Outcome[], m: Metrics, note: string): s
       ? "Dropped by quote verification: n/a (no model ran)."
       : `Dropped by quote verification: ${m.dropped} of ${m.dropped + m.modelKept} model findings (${pct(m.dropped, m.dropped + m.modelKept)}).`,
     "",
-    "| Category | TP | FP | FN | Precision | Recall |",
-    "|---|---:|---:|---:|---:|---:|",
-    ...rows.map((r) => `| ${r.category} | ${r.tp} | ${r.fp} | ${r.fn} | ${pct(r.tp, r.tp + r.fp)} | ${pct(r.tp, r.tp + r.fn)} |`),
+    sevLine(m),
+    "",
+    "| Category | TP | FP | FN | Precision | Recall | Severity agree / harsher / milder | Severity shown (H/M/L) |",
+    "|---|---:|---:|---:|---:|---:|---|---|",
+    ...rows.map(
+      (r) =>
+        `| ${r.category} | ${r.tp} | ${r.fp} | ${r.fn} | ${pct(r.tp, r.tp + r.fp)} | ${pct(r.tp, r.tp + r.fn)} | ${r.sevAgree} / ${r.sevHarsher} / ${r.sevMilder} | ${distText(r.dist)} |`,
+    ),
     "",
     "| Case | Expected verdict | Got | Expected categories | Got flags (category:severity) | ms |",
     "|---|---|---|---|---|---:|",
@@ -218,10 +283,19 @@ function consoleSummary(title: string, m: Metrics): string {
   const rows = m.perCategory.filter((r) => r.tp + r.fp + r.fn > 0);
   return [
     `${title}: n=${m.n}, verdict ${m.verdictCorrect}/${m.n}, precision ${pct(m.micro.tp, m.micro.tp + m.micro.fp)}, recall ${pct(m.micro.tp, m.micro.tp + m.micro.fn)}, dropped ${m.usedLlm === 0 ? "n/a (no model)" : `${m.dropped}/${m.dropped + m.modelKept}`}, median ${m.medianMs.toFixed(0)} ms`,
-    "  category               TP  FP  FN  prec  recall",
+    "  " + sevLine(m),
+    "  category               TP  FP  FN  prec  recall  sev a/h/m  shown",
     ...rows.map(
       (r) =>
-        "  " + r.category.padEnd(22) + String(r.tp).padStart(3) + String(r.fp).padStart(4) + String(r.fn).padStart(4) + pct(r.tp, r.tp + r.fp).padStart(6) + pct(r.tp, r.tp + r.fn).padStart(8),
+        "  " +
+        r.category.padEnd(22) +
+        String(r.tp).padStart(3) +
+        String(r.fp).padStart(4) +
+        String(r.fn).padStart(4) +
+        pct(r.tp, r.tp + r.fp).padStart(6) +
+        pct(r.tp, r.tp + r.fn).padStart(8) +
+        `  ${r.sevAgree}/${r.sevHarsher}/${r.sevMilder}`.padEnd(11) +
+        distText(r.dist),
     ),
   ].join("\n");
 }
@@ -232,13 +306,51 @@ function consoleSummary(title: string, m: Metrics): string {
 const why = (r: Report) => r.flags.map((f) => `${f.category}:${f.severity}`).join(", ") || "none";
 
 interface SetResult {
+  /** The first run (tables and per-case diffs). */
   outcomes: Outcome[];
   metrics: Metrics;
+  /** Every run, when repeated (`--runs N`). */
+  runs: { outcomes: Outcome[]; metrics: Metrics }[];
 }
 
-async function evaluate(cases: Case[], client: LlmClient): Promise<SetResult> {
-  const outcomes = cases.length ? await run(cases, client) : [];
-  return { outcomes, metrics: score(outcomes) };
+async function evaluate(cases: Case[], client: LlmClient, runs = 1): Promise<SetResult> {
+  const n = client.provider === "mock" ? 1 : runs;
+  const all: { outcomes: Outcome[]; metrics: Metrics }[] = [];
+  for (let i = 0; i < n; i++) {
+    const outcomes = cases.length ? await run(cases, client) : [];
+    all.push({ outcomes, metrics: score(outcomes) });
+  }
+  return { outcomes: all[0].outcomes, metrics: all[0].metrics, runs: all };
+}
+
+/** "mean 82% (min 78%, max 85%, sd 3.1)" over runs. */
+function spread(xs: number[]): string {
+  if (xs.length === 0) return "n/a";
+  const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+  if (xs.length === 1) return `${mean.toFixed(0)}%`;
+  const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / (xs.length - 1));
+  return `mean ${mean.toFixed(0)}% (min ${Math.min(...xs).toFixed(0)}%, max ${Math.max(...xs).toFixed(0)}%, sd ${sd.toFixed(1)})`;
+}
+
+const ratio = (num: number, den: number) => (den === 0 ? 0 : (100 * num) / den);
+
+/** Repeat statistics: spread of the headline metrics, latency percentiles, fallbacks and timeouts. */
+function repeatStats(title: string, r: SetResult, client: LlmClient): string {
+  const outs = r.runs.flatMap((x) => x.outcomes);
+  const ms = outs.map((o) => o.ms);
+  const model = client.provider !== "mock";
+  const fellBack = model ? outs.filter((o) => !o.report.stats.usedLlm).length : 0;
+  const timeouts = model ? outs.filter((o) => !o.report.stats.usedLlm && o.ms >= config.llmTimeoutMs * 0.95).length : 0;
+  return [
+    `${title}: ${r.runs.length} run(s) x ${r.metrics.n} cases`,
+    `  verdict accuracy ${spread(r.runs.map((x) => ratio(x.metrics.verdictCorrect, x.metrics.n)))}`,
+    `  precision ${spread(r.runs.map((x) => ratio(x.metrics.micro.tp, x.metrics.micro.tp + x.metrics.micro.fp)))}`,
+    `  recall ${spread(r.runs.map((x) => ratio(x.metrics.micro.tp, x.metrics.micro.tp + x.metrics.micro.fn)))}`,
+    `  severity agreement ${spread(r.runs.filter((x) => x.metrics.sev.scored > 0).map((x) => ratio(x.metrics.sev.agree, x.metrics.sev.scored)))}`,
+    `  dropped by verification ${spread(r.runs.filter((x) => x.metrics.dropped + x.metrics.modelKept > 0).map((x) => ratio(x.metrics.dropped, x.metrics.dropped + x.metrics.modelKept)))}`,
+    `  latency p50 ${percentile(ms, 50).toFixed(0)} ms, p90 ${percentile(ms, 90).toFixed(0)} ms, p95 ${percentile(ms, 95).toFixed(0)} ms`,
+    model ? `  fell back to rules ${fellBack}/${outs.length} (of which timeouts ${timeouts}, timeout ${config.llmTimeoutMs} ms)` : "  fell back to rules: n/a (no model)",
+  ].join("\n");
 }
 
 function diffTable(title: string, a: SetResult, b: SetResult): string {
@@ -252,6 +364,7 @@ function diffTable(title: string, a: SetResult, b: SetResult): string {
     `| Verdict accuracy | ${a.metrics.verdictCorrect}/${a.metrics.n} | ${b.metrics.verdictCorrect}/${b.metrics.n} |`,
     `| Precision | ${pct(a.metrics.micro.tp, a.metrics.micro.tp + a.metrics.micro.fp)} | ${pct(b.metrics.micro.tp, b.metrics.micro.tp + b.metrics.micro.fp)} |`,
     `| Recall | ${pct(a.metrics.micro.tp, a.metrics.micro.tp + a.metrics.micro.fn)} | ${pct(b.metrics.micro.tp, b.metrics.micro.tp + b.metrics.micro.fn)} |`,
+    `| Severity agreement | ${a.metrics.sev.agree}/${a.metrics.sev.scored} | ${b.metrics.sev.agree}/${b.metrics.sev.scored} |`,
     `| Model findings dropped | n/a | ${b.metrics.dropped}/${b.metrics.dropped + b.metrics.modelKept} |`,
     `| Model answered | n/a | ${b.metrics.usedLlm}/${b.metrics.n} |`,
     `| Median latency | ${a.metrics.medianMs.toFixed(0)} ms | ${b.metrics.medianMs.toFixed(0)} ms |`,
@@ -288,8 +401,8 @@ const real = realCases();
 const realList = real?.cases ?? [];
 
 // The main run uses the configured provider (mock = rules only).
-const fx = await evaluate(fxCases, llm);
-const rl = await evaluate(realList, llm);
+const fx = await evaluate(fxCases, llm, RUNS);
+const rl = await evaluate(realList, llm, RUNS);
 
 // Compare mode: a rules-only run next to a configured-model run.
 let compareMd = "";
@@ -308,7 +421,13 @@ if (COMPARE) {
       diffTable("Fixture stores", fxRules, fx) +
       "\n" +
       (realList.length ? diffTable("Real-world policies", rlRules, rl) : "Real-world policies: not run.\n");
-    compareOut = [diffConsole("Fixtures", fxRules, fx), realList.length ? diffConsole("Real-world", rlRules, rl) : ""].filter(Boolean).join("\n\n");
+    compareOut = [
+      diffConsole("Fixtures", fxRules, fx),
+      realList.length ? diffConsole("Real-world", rlRules, rl) : "",
+      realList.length ? consoleSummary("Real-world, rules only", rlRules.metrics) : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
   }
 }
 
@@ -342,7 +461,17 @@ else
       (real.skipped.length ? ` Skipped: ${real.skipped.join(", ")}.` : ""),
   );
 
-const md = header + "\n" + tables("Fixture stores", fx.outcomes, fx.metrics, fixtureNote) + "\n" + realSection + (compareMd ? "\n" + compareMd : "");
+const repeatOut = [repeatStats("Fixtures", fx, llm), realList.length ? repeatStats("Real-world", rl, llm) : ""].filter(Boolean).join("\n");
+const md =
+  header +
+  "\n" +
+  tables("Fixture stores", fx.outcomes, fx.metrics, fixtureNote) +
+  "\n" +
+  realSection +
+  (compareMd ? "\n" + compareMd : "") +
+  "\n## Repeats and latency\n\n```\n" +
+  repeatOut +
+  "\n```\n";
 writeFileSync(join(EVAL_DIR, "results.md"), md);
 
 process.stdout.write(
@@ -351,6 +480,7 @@ process.stdout.write(
     consoleSummary("Fixtures", fx.metrics),
     real ? (rl.outcomes.length ? consoleSummary("Real-world", rl.metrics) : "Real-world: no usable items") : "Real-world: skipped (eval/real/labels.json not found)",
     ...(compareOut ? [compareOut] : []),
+    repeatOut,
     "Wrote eval/results.md",
   ].join("\n\n") + "\n",
 );

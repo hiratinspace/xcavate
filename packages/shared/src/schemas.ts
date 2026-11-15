@@ -136,8 +136,27 @@ export const LlmFindingSchema = z.object({
   quote: z.string(),
 });
 
+/**
+ * The model's review of one rules candidate flag (direction v3): keep it, demote it or drop it as
+ * not applicable. Bounded (quote and reason clipped, at most 12 items) by clipping, so an
+ * over-long answer never fails the whole parse. `reason` is model free text: logs and eval only.
+ * The engine decides what a review may change (packages/shared/src/engine/analyze.ts).
+ */
+export const LlmRulesReviewSchema = z.object({
+  category: CategorySchema.exclude(["missing_policy"]),
+  action: z.enum(["keep", "demote", "drop"]),
+  severity: SeveritySchema.nullable(),
+  quote: z.string().transform((s) => s.slice(0, LIMITS.maxQuoteChars)),
+  reason: z.string().transform((s) => s.slice(0, 200)),
+});
+
 export const LlmOutputSchema = z.object({
   findings: z.array(LlmFindingSchema),
+  /** Optional so older answers, the mock and cached outputs still parse. */
+  rulesReview: z
+    .array(LlmRulesReviewSchema)
+    .transform((a) => a.slice(0, 12))
+    .optional(),
   trial: z
     .object({
       lengthDays: z.number().int().nullable(),

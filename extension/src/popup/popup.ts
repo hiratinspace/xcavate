@@ -5,7 +5,8 @@ import { renderPopup, type PopupView } from "./render";
 /** Popup entry (U-03, U-04). Reads tab state from the service worker; settings from chrome.storage. */
 
 const POLL_MS = 900;
-const POLL_LIMIT_MS = 30_000;
+// Policy fetches (up to 8 s) plus the analyze call (25 s client timeout), with room to spare.
+const POLL_LIMIT_MS = 45_000;
 
 async function main() {
   const root = document.getElementById("app")!;

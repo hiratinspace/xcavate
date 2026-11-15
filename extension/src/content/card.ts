@@ -14,9 +14,14 @@ import { describeExtras, extraFeeCount } from "./fees";
 import { buildTrialReminder, cardFlags, chargeHeadline, linkParts, partialNote, RIGHTS_LABEL, storeName, trialPolicyUrl } from "../lib/actions";
 
 /**
- * U-01 checkout card (BUILD_PLAN 7.10). Fixed bottom-right, 340 px, inside a closed shadow root.
+ * U-01 checkout card (BUILD_PLAN 7.10). Fixed bottom corner, inside a closed shadow root.
  * States: checking, red, yellow, green, partial, unknown. Errors show no card at all.
  * With a known trial length the headline is the charge date (V-05) and the card offers a reminder.
+ *
+ * It starts compact (verdict, headline, "Show details", disclaimer: under 140 px tall) so it never
+ * hides a price or a pay button; the shopper expands it, or moves it to the other side. Both
+ * choices survive re-renders and are reported through `onPrefsChange` so the content script can
+ * keep them for the session.
  */
 
 export const CARD_HOST_ID = "xcavate-card-host";
@@ -25,9 +30,22 @@ const SEVERITY_WORD = { high: "High", medium: "Medium", low: "Low" } as const;
 
 export type CardState = "hidden" | "checking" | "report";
 
+export type CardSide = "right" | "left";
+
+export interface CardPrefs {
+  /** Details open. Default false: the card starts compact. */
+  expanded: boolean;
+  /** Which bottom corner. Default "right". */
+  side: CardSide;
+}
+
 export interface CardOptions {
   shadowMode?: ShadowRootMode;
   onDismiss?: () => void;
+  /** Starting preferences (for example the ones remembered for this browser session). */
+  prefs?: Partial<CardPrefs>;
+  /** Called whenever the shopper expands/collapses the card or moves it. */
+  onPrefsChange?: (prefs: CardPrefs) => void;
 }
 
 export interface LocalFindings {
@@ -48,9 +66,12 @@ export class Card {
   /** The headline node last rendered; kept across a same-verdict update so nothing is re-announced. */
   private headlineEl: HTMLElement | undefined;
   private inPlace = false;
+  private prefs: CardPrefs;
+  private cardEl: HTMLElement | undefined;
   private onKey = (e: KeyboardEvent) => this.handleKey(e);
 
   constructor(private doc: Document, private opts: CardOptions = {}) {
+    this.prefs = { expanded: opts.prefs?.expanded ?? false, side: opts.prefs?.side === "left" ? "left" : "right" };
     this.host = doc.createElement("xcavate-card");
     this.host.id = CARD_HOST_ID;
     this.host.setAttribute("style", HOST_STYLE);
@@ -64,6 +85,21 @@ export class Card {
   /** Test hook: the shadow root (reachable from outside only in tests that pass shadowMode "open"). */
   get shadow(): ShadowRoot {
     return this.root;
+  }
+
+  /** Current preferences (expanded, side). */
+  get preferences(): CardPrefs {
+    return { ...this.prefs };
+  }
+
+  /**
+   * Apply preferences loaded later (for example from session storage), without telling
+   * `onPrefsChange` and without re-announcing anything.
+   */
+  setPrefs(prefs: Partial<CardPrefs>): void {
+    if (prefs.expanded !== undefined) this.prefs.expanded = prefs.expanded;
+    if (prefs.side === "left" || prefs.side === "right") this.prefs.side = prefs.side;
+    this.applyPrefs();
   }
 
   showChecking(domain: string): void {
@@ -119,11 +155,15 @@ export class Card {
     const d = this.doc;
     const verdict = this.state === "checking" ? "checking" : this.report?.verdict ?? "unknown";
     const fresh = !this.host.isConnected;
+    // Keyboard focus survives a re-render (the backend report replacing the on-device one): every
+    // focusable control carries a stable data-xc-key, restored after the new tree is in place.
+    const focusKey = (this.root.activeElement as HTMLElement | null)?.dataset?.xcKey;
 
     const card = el(d, "section", "card");
     card.dataset.verdict = verdict;
     card.setAttribute("aria-label", "Xcavate fine print check");
     if (fresh) card.setAttribute("data-enter", "");
+    this.cardEl = card;
 
     const core = el(d, "div", "core");
     core.setAttribute("aria-hidden", "true");
@@ -140,8 +180,10 @@ export class Card {
     top.appendChild(glyph);
     const word = this.state === "checking" ? "Checking the fine print" : VERDICT_WORD[this.report!.verdict];
     top.appendChild(el(d, "span", "word", word));
-    const close = el(d, "button", "close", "×");
-    close.setAttribute("type", "button");
+    const move = button(d, "move", "", "move");
+    move.addEventListener("click", () => this.updatePrefs({ side: this.prefs.side === "right" ? "left" : "right" }));
+    top.appendChild(move);
+    const close = button(d, "close", "×", "close");
     close.setAttribute("aria-label", "Close Xcavate card");
     close.addEventListener("click", () => this.dismiss());
     top.appendChild(close);
@@ -169,28 +211,35 @@ export class Card {
     if (this.domain) head.appendChild(el(d, "p", "site", this.domain));
     body.appendChild(head);
 
+    // Always visible, in both states: the trial reminder (the action that matters), the toggle
+    // and the disclaimer. Everything else lives in the details below, hidden with CSS while
+    // compact, so the toggle never rebuilds the tree (focus and the live region stay put).
+    const bar = el(d, "div", "bar");
+    const details = el(d, "div", "details");
+    details.id = "xc-details";
+
     if (r) {
       let rest = shown;
       if (charge) {
-        const quoted = this.trialBlock(body, r, shown);
+        const quoted = this.trialBlock(bar, details, r, shown);
         rest = shown.filter((f) => f !== quoted);
       }
       if (rest.length) {
         const list = el(d, "ul", "flags");
         list.setAttribute("aria-label", charge ? "More to read" : "Things to read");
-        for (const f of rest) list.appendChild(this.flagItem(f));
-        body.appendChild(list);
+        rest.forEach((f, i) => list.appendChild(this.flagItem(f, i)));
+        details.appendChild(list);
       } else if (r.verdict === "green" && !charge) {
-        body.appendChild(el(d, "p", "empty", "We read " + policyCount(r) + " and found no auto-renewals, refund limits or extra fees."));
+        details.appendChild(el(d, "p", "empty", "We read " + policyCount(r) + " and found no auto-renewals, refund limits or extra fees."));
       }
       const cov = r.verdict === "partial" ? partialNote(r) : coverage(r);
-      if (cov) body.appendChild(el(d, "p", "note coverage", cov));
+      if (cov) details.appendChild(el(d, "p", "note coverage", cov));
       const changes = r.changes?.filter((c) => c.bullets.length) ?? [];
       if (changes.length) {
         const p = el(d, "p", "note change");
         p.appendChild(el(d, "b", "", "Terms changed since your last visit. "));
         p.appendChild(d.createTextNode(changes[0].bullets[0]));
-        body.appendChild(p);
+        details.appendChild(p);
       }
     }
 
@@ -199,7 +248,7 @@ export class Card {
       const p = el(d, "p", "note local");
       p.appendChild(el(d, "b", "", "Fees added at checkout: "));
       p.appendChild(d.createTextNode(describeExtras(this.local.fees)));
-      body.appendChild(p);
+      details.appendChild(p);
     }
     const dp = this.local.darkPatterns ?? [];
     if (dp.length) {
@@ -207,13 +256,12 @@ export class Card {
       const what = dp.length === 1 ? "1 option was ticked for you" : dp.length + " options were ticked for you";
       p.appendChild(el(d, "b", "", what + ". "));
       p.appendChild(d.createTextNode("Outlined on the page: " + dp.map((x) => shortLabel(x.label)).join("; ")));
-      body.appendChild(p);
+      details.appendChild(p);
     }
 
-    const foot = el(d, "div", "foot");
     if (this.state === "report") {
-      const more = el(d, "button", "more", "See all");
-      more.setAttribute("type", "button");
+      const foot = el(d, "div", "foot");
+      const more = button(d, "more", "See all", "more");
       more.setAttribute("aria-expanded", "false");
       const hint = el(d, "p", "hint", "Click the Xcavate button in your browser toolbar to see every flag and the exact sentence it came from.");
       hint.id = "xc-hint";
@@ -224,23 +272,62 @@ export class Card {
         more.setAttribute("aria-expanded", String(!hint.hidden));
       });
       foot.appendChild(more);
-      foot.appendChild(el(d, "p", "disclaimer", DISCLAIMER));
       foot.appendChild(hint);
-    } else {
-      foot.appendChild(el(d, "p", "disclaimer", DISCLAIMER));
+      details.appendChild(foot);
     }
-    body.appendChild(foot);
+    const hasDetails = details.childNodes.length > 0;
+    body.appendChild(bar);
+    if (hasDetails) body.appendChild(details);
+    if (hasDetails) {
+      const toggle = button(d, "toggle", "", "toggle");
+      toggle.setAttribute("aria-controls", "xc-details");
+      toggle.addEventListener("click", () => this.updatePrefs({ expanded: !this.prefs.expanded }));
+      bar.appendChild(toggle);
+    }
+    bar.appendChild(el(d, "p", "disclaimer", DISCLAIMER));
 
     const style = d.createElement("style");
     style.textContent = cardCss;
     this.root.replaceChildren(style, card);
+    this.applyPrefs();
     if (fresh) {
       (d.documentElement ?? d.body).appendChild(this.host);
       d.addEventListener("keydown", this.onKey, true);
     }
+    if (focusKey) {
+      const target =
+        this.root.querySelector<HTMLElement>(`[data-xc-key="${focusKey}"]`) ?? this.root.querySelector<HTMLElement>('[data-xc-key="toggle"]');
+      target?.focus({ preventScroll: true });
+    }
   }
 
-  private flagItem(f: Flag): HTMLElement {
+  private updatePrefs(next: Partial<CardPrefs>): void {
+    this.setPrefs(next);
+    this.opts.onPrefsChange?.({ ...this.prefs });
+  }
+
+  /** Reflect expanded/side on the current tree without rebuilding it. */
+  private applyPrefs(): void {
+    const card = this.cardEl;
+    if (!card) return;
+    const { expanded, side } = this.prefs;
+    card.dataset.expanded = String(expanded);
+    card.dataset.side = side;
+    const toggle = card.querySelector<HTMLElement>(".toggle");
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", String(expanded));
+      toggle.textContent = expanded ? "Hide details" : "Show details";
+    }
+    const move = card.querySelector<HTMLElement>(".move");
+    if (move) {
+      const to = side === "right" ? "left" : "right";
+      move.textContent = side === "right" ? "←" : "→";
+      move.setAttribute("aria-label", `Move the Xcavate card to the ${to} side`);
+      move.title = `Move to the ${to}`;
+    }
+  }
+
+  private flagItem(f: Flag, index: number): HTMLElement {
     const d = this.doc;
     const li = el(d, "li", "flag");
     const sev = el(d, "span", "sev");
@@ -254,7 +341,7 @@ export class Card {
     text.appendChild(title);
     text.appendChild(el(d, "p", "flag-sum", f.summary));
     if (f.context) text.appendChild(el(d, "p", "flag-ctx", f.context));
-    if (f.rightsNote) text.appendChild(rightsBox(d, f.rightsNote));
+    if (f.rightsNote) text.appendChild(rightsBox(d, f.rightsNote, "rights-" + index));
     li.appendChild(text);
     return li;
   }
@@ -263,9 +350,9 @@ export class Card {
    * V-05: reminder actions and one quoted sentence under the charge-date headline.
    * Returns the card flag whose quote is shown, so it is not repeated below.
    */
-  private trialBlock(body: HTMLElement, r: Report, shown: Flag[]): Flag | undefined {
+  private trialBlock(bar: HTMLElement, details: HTMLElement, r: Report, shown: Flag[]): Flag | undefined {
     const d = this.doc;
-    const wrap = el(d, "div", "trial");
+    const wrap = el(d, "div", "trial trial-quote");
     const policyUrl = trialPolicyUrl(r);
     const reminder = buildTrialReminder(r.trial, storeName(r.domain, d.title), policyUrl);
     if (reminder) {
@@ -278,13 +365,18 @@ export class Card {
       cal.target = "_blank";
       cal.rel = "noopener noreferrer";
       cal.setAttribute("aria-label", `Remind me ${days} before the first charge, in Google Calendar (opens a new tab)`);
+      cal.dataset.xcKey = "remind";
       acts.appendChild(cal);
+      bar.appendChild(acts);
+      const more = el(d, "div", "remind remind-more");
       const ics = el(d, "a", "btn", ".ics file") as HTMLAnchorElement;
       ics.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(reminder.ics);
       ics.download = "xcavate-trial-reminder.ics";
       ics.setAttribute("aria-label", "Download the reminder as an .ics file for any calendar app");
-      acts.appendChild(ics);
-      wrap.appendChild(acts);
+      ics.dataset.xcKey = "ics";
+      more.appendChild(d.createTextNode("Other calendar: "));
+      more.appendChild(ics);
+      wrap.appendChild(more);
     }
 
     const trialFlag = shown.find((f) => f.category === "trial_converts");
@@ -300,31 +392,41 @@ export class Card {
         a.href = link;
         a.target = "_blank";
         a.rel = "noopener noreferrer";
+        a.dataset.xcKey = "see";
         bq.appendChild(a);
       }
-      wrap.appendChild(bq);
+      wrap.prepend(bq);
     }
-    body.appendChild(wrap);
+    if (wrap.childNodes.length) details.appendChild(wrap);
     return quote ? from : undefined;
   }
 }
 
 /** "Your rights (general information, not legal advice)" box. Only real http(s) URLs become links. */
-export function rightsBox(d: Document, note: string): HTMLElement {
+export function rightsBox(d: Document, note: string, keyPrefix?: string): HTMLElement {
   const box = el(d, "div", "rights");
   box.appendChild(el(d, "p", "rights-label", RIGHTS_LABEL));
   const p = el(d, "p", "rights-text");
+  let n = 0;
   for (const part of linkParts(note)) {
     if (part.href) {
       const a = el(d, "a", "", part.text) as HTMLAnchorElement;
       a.href = part.href;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
+      if (keyPrefix) a.dataset.xcKey = keyPrefix + "-" + n++;
       p.appendChild(a);
     } else p.appendChild(d.createTextNode(part.text));
   }
   box.appendChild(p);
   return box;
+}
+
+function button(d: Document, cls: string, text: string, key: string): HTMLElement {
+  const b = el(d, "button", cls, text);
+  b.setAttribute("type", "button");
+  b.dataset.xcKey = key;
+  return b;
 }
 
 function el(d: Document, tag: string, cls: string, text?: string): HTMLElement {

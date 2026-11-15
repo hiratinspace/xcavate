@@ -17,6 +17,13 @@ export interface Config {
 
 export const DEFAULT_MODEL = "claude-sonnet-5-5";
 
+/**
+ * One deadline for every model call of a request (SDK retries and the app retry included).
+ * Keep it below the extension's ANALYZE_TIMEOUT_MS (25 s) so the server always answers first,
+ * with its rules-only fallback, instead of the client giving up.
+ */
+export const DEFAULT_LLM_TIMEOUT_MS = 20_000;
+
 function int(v: string | undefined, fallback: number): number {
   const n = Number.parseInt(v ?? "", 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
@@ -31,7 +38,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     llmProvider: provider === "anthropic" ? "anthropic" : "mock",
     llmApiKey: (env.LLM_API_KEY ?? "").trim(),
     llmModel: (env.LLM_MODEL ?? "").trim() || DEFAULT_MODEL,
-    llmTimeoutMs: int(env.LLM_TIMEOUT_MS, 12_000),
+    llmTimeoutMs: int(env.LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
     dbPath: (env.DB_PATH ?? "").trim() || "./data/xcavate.db",
     rateLimitPerMin: int(env.RATE_LIMIT_PER_MIN, 30),
     store: store === "sqlite" || store === "memory" ? store : "auto",

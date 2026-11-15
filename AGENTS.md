@@ -108,7 +108,7 @@ The loop every change went through:
 - **Writing style:** avoid unnecessary em dashes in code comments, docs and commit messages.
 - **Commit trailer** used so far: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` for agent-written commits.
 
-## 6. Status (2026-11-14)
+## 6. Status (2026-11-15)
 
 **Done and pushed:** scaffold and contracts; fixture stores; backend (API, pipeline, LLM client, store, seed, eval, prompt-injection tests); extension (all P0 plus fees, add-ons, trial reminder, cancellation helper, change alerts, settings); README; two independent review rounds with fixes; contract support for the `partial` verdict and per-flag `context` / `rightsNote`. 
 
@@ -116,11 +116,21 @@ The loop every change went through:
 
 **Direction v2 (merged):** recalibrated verdict (V-01: plain renewals with online cancel are low, red needs harsh terms; arbitration and data sharing never drive the verdict), grey "Partly read" state instead of false green (V-02), honest mock + `npm run eval -- --compare` (V-03 code), trial card headline with charge date, Remind me and a quoted line (V-05), card fires on pricing pages (V-07), California rights note on phone-only cancellation (V-08, wording pending owner review), Shopify fallback paths (V-10), domain-only `pageUrl` (V-11), snapshot retention that refuses new versions at the per-URL cap, hardened netguard, on-device rules verdict that the backend report upgrades plus an "AI check" setting that sends nothing when off (V-06, parity-tested against the server). Professional README with screenshots in `.github/assets/`. Real-browser e2e (V-04): 9 Playwright specs pass in headless Chromium with the extension loaded; it found and fixed a stale "ticked for you" card row. About 578 unit tests.
 
+**Direction v3 (merged 2026-11-15), from three independent reviews (code, 27 real sites, accuracy):**
+- *Trust (engine):* misread headlines fixed (cancel verb must govern the channel; "written notice" is not mail; advance-notice provisos cap price_change; partial-period no-refund is low with a "normal for subscriptions" context; deduction-from-refund and plan-switch sentences are not no_refund; exception clauses don't make a trial prepaid). Business/enterprise contracts are excluded (`engine/scope.ts`). The model now reviews the best rules hit per category (`rulesReview`: keep/demote/drop, quote must verify on the same clause). After a security review, any model softening is capped at ONE level for every category and never removes a rules finding (a high hit stays at least medium, so a review can't turn red into green), and on sites whose text addresses AI tools (`addressesAiTools`) the model can't soften anything. Reviews never raise; `reason` is never shown. "waive" no longer negates arbitration; keywords widened. Green needs money terms in what was read, else `partial`. PIPELINE_VERSION 4.
+- *Coverage (extension):* classifier counts link/role=button CTAs, trial CTAs and many price formats inside pricing blocks; bounded late re-check for hydrated pages (`watchForLateQualify`, once per URL). Policy finder excludes collections/products/commerce/checkout/cookie/help-index/business pages and ranks named documents first. Real plan/checkout pages that fire: 11/16 (was 4/16). Card starts compact (about 110 px; 137 px with a trial), expands on demand, can switch corners, keeps keyboard focus across updates.
+- *Reliability:* rules-only fallbacks are no longer cached as if the AI ran (popup says "AI check unavailable"); LLM deadline 20 s (client 25 s), app retry only with 6 s left; REPORT carries `page` so late results can't land on another page; tab state cleared on navigation; per-tab write queue; AI check off aborts in-flight calls; per-policy fetch 4 s with an early on-device verdict from what arrived.
+- *e2e:* 11 specs; waits for the backend report (proxy marks it), uses the real GET_STATE, AI-check-off sends zero requests, rules-only fallback not cached. Runs on ports 18787/18788 so the dev server on 8787 can stay up; `E2E_REUSE_FIXTURES=1` reuses a running fixture server on 4000/4001.
+- *Eval:* severity scored per category; `--runs N` gives mean/spread and p50/p90/p95 latency. Current numbers (3 runs, Sonnet 5.5): fixtures 5/5; real-world precision 91%, recall 100%, severity agreement 75%, 31% of model findings dropped by quote check, p50 2.7 s, p90 8.8 s, 0/30 fallbacks. Rules only: precision 95%, recall 100%. Verdicts match the draft labels 6/10 in both modes: the four disagreements (two partial-period no-refund streaming terms, a conditional restocking fee, a generic ToS with no billing terms) follow the v3 rubric, and the labels await human review. They were deliberately not edited to fit.
+- Content script 55 KB of the 60 KB budget (inlined CSS minified, sample data no longer bundled). About 705 unit tests.
+
 **Open, good places to contribute:**
 
 | ID | What | Notes |
 |---|---|---|
-| - | Human review of the real-world labels (`eval/real/labels.json`, local only; ask the owner for the files) | Needed before any accuracy number is quoted |
+| - | Human review of the real-world labels (`eval/real/labels.json`, local only; ask the owner for the files) | Needed before any accuracy number is quoted; start with the four v3 disagreements |
+| - | Held-out set: 15-20 new policies labelled by a human before any rule change (gyms, annual SaaS/VPN, carriers with ETFs, ticketing fees, clean retailers, meal kits, store-credit-only refunds) | Rules were developed on the current 10 texts |
+| - | Real-site retest with the real model, headed browser for bot-walled sites | Scratch harness approach: e2e/support/harness.ts |
 | V-09 | Deploy the backend and ship a packed `.zip` | Deferred by the owner until the tool works end to end |
 | V-12 | Pitch rewrite around proof + action; honest comparison with TermAlert, AgreeGuard and Gemini | V-03 numbers now exist (section 6) |
 
