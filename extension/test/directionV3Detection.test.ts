@@ -289,10 +289,9 @@ describe("3. Card starts compact, expands on demand, can move", () => {
     const css = readFileSync(join(__dirname, "..", "src", "content", "card.css"), "utf8");
     expect(css).toMatch(/\.card\[data-expanded="false"\] \.details/);
     expect(css).toMatch(/\.card\[data-side="left"\] \{ right: auto; left: 16px/);
-    // No side-tab accent borders: the quote rule is the one sanctioned exception.
+    // No side-tab accent borders (quotes hang from a 1px hairline, like a label footnote).
     const accents = css.split("\n").filter((l) => /border-left:\s*[2-9]px solid/.test(l));
-    expect(accents).toHaveLength(1);
-    expect(accents[0]).toMatch(/^\.quote /);
+    expect(accents).toHaveLength(0);
   });
 
   it("the trial reminder stays visible while compact; the quote waits in the details", () => {

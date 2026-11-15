@@ -1,7 +1,6 @@
 import {
   DISCLAIMER,
   textFragmentUrl,
-  VERDICT_ICON,
   VERDICT_WORD,
   verdictHeadline,
   type DarkPatternFinding,
@@ -10,8 +9,9 @@ import {
   type Report,
 } from "@xcavate/shared/core";
 import cardCss from "./card.css?inline";
+import { icon } from "./icons";
 import { describeExtras, extraFeeCount } from "./fees";
-import { buildTrialReminder, cardFlags, chargeHeadline, linkParts, partialNote, RIGHTS_LABEL, storeName, trialPolicyUrl } from "../lib/actions";
+import { buildTrialReminder, cardFlags, chargeHeadline, countText, linkParts, partialNote, RIGHTS_LABEL, storeName, trialPolicyUrl } from "../lib/actions";
 
 /**
  * U-01 checkout card (BUILD_PLAN 7.10). Fixed bottom corner, inside a closed shadow root.
@@ -56,6 +56,31 @@ export interface LocalFindings {
 const HOST_STYLE =
   "all: initial !important; position: fixed !important; right: 0 !important; bottom: 0 !important; width: 0 !important; height: 0 !important; overflow: visible !important; z-index: 2147483647 !important; display: block !important; pointer-events: auto !important; transform: none !important; filter: none !important; opacity: 1 !important; visibility: visible !important;";
 
+let fontsRequested = false;
+
+/**
+ * Libre Franklin (OFL, bundled in fonts/) for the card. Loaded as bytes through the extension, so a
+ * page's font-src CSP can't block it; until it arrives the card falls back to Helvetica/Arial.
+ */
+function loadCardFonts(doc: Document): void {
+  if (fontsRequested) return;
+  fontsRequested = true;
+  const rt = (globalThis as { chrome?: { runtime?: { getURL?: (p: string) => string } } }).chrome?.runtime;
+  const fonts = (doc as Document & { fonts?: FontFaceSet }).fonts;
+  if (!rt?.getURL || !fonts || typeof FontFace === "undefined") return;
+  const faces: [string, FontFaceDescriptors][] = [
+    ["fonts/libre-franklin-latin.woff2", { weight: "400 900", style: "normal" }],
+    ["fonts/libre-franklin-italic-latin.woff2", { weight: "400 900", style: "italic" }],
+  ];
+  for (const [path, desc] of faces) {
+    fetch(rt.getURL(path))
+      .then((res) => res.arrayBuffer())
+      .then((buf) => new FontFace("Xcavate Franklin", buf, desc).load())
+      .then((face) => fonts.add(face))
+      .catch(() => undefined);
+  }
+}
+
 export class Card {
   private host: HTMLElement;
   private root: ShadowRoot;
@@ -78,6 +103,7 @@ export class Card {
     this.host.id = CARD_HOST_ID;
     this.host.setAttribute("style", HOST_STYLE);
     this.root = this.host.attachShadow({ mode: opts.shadowMode ?? "closed" });
+    loadCardFonts(doc);
   }
 
   get current(): CardState {
@@ -168,35 +194,48 @@ export class Card {
     if (fresh) card.setAttribute("data-enter", "");
     this.cardEl = card;
 
-    const core = el(d, "div", "core");
-    core.setAttribute("aria-hidden", "true");
-    for (const c of ["l-v", "l1", "l2", "l3", "l4"]) core.appendChild(el(d, "span", c));
-    card.appendChild(core);
-
     const body = el(d, "div", "body");
     card.appendChild(body);
-
-    const head = el(d, "div", "head");
-    const top = el(d, "div", "top");
-    const glyph = el(d, "span", "glyph", this.state === "checking" ? "…" : VERDICT_ICON[verdict as keyof typeof VERDICT_ICON]);
-    glyph.setAttribute("aria-hidden", "true");
-    top.appendChild(glyph);
-    const word = this.state === "checking" ? "Checking the fine print" : VERDICT_WORD[this.report!.verdict];
-    top.appendChild(el(d, "span", "word", word));
-    const move = button(d, "move", "", "move");
-    move.addEventListener("click", () => this.updatePrefs({ side: this.prefs.side === "right" ? "left" : "right" }));
-    top.appendChild(move);
-    const close = button(d, "close", "×", "close");
-    close.setAttribute("aria-label", "Close Xcavate card");
-    close.addEventListener("click", () => this.dismiss());
-    top.appendChild(close);
-    head.appendChild(top);
 
     const r = this.state === "report" ? this.report : undefined;
     const shown = r ? cardFlags(r.flags, MAX_FLAGS) : [];
     const charge = r ? chargeHeadline(r.trial) : undefined;
+
+    // Title row, like the top of a nutrition label: "Terms Facts", the mark, then move and close.
+    const head = el(d, "div", "head");
+    const top = el(d, "div", "top");
+    top.appendChild(el(d, "span", "title", "Terms Facts"));
+    top.appendChild(icon(d, "mark", "mark"));
+    top.appendChild(el(d, "span", "gap"));
+    const move = button(d, "move", "", "move");
+    move.addEventListener("click", () => this.updatePrefs({ side: this.prefs.side === "right" ? "left" : "right" }));
+    top.appendChild(move);
+    const close = button(d, "close", "", "close");
+    close.appendChild(icon(d, "close"));
+    close.setAttribute("aria-label", "Close Xcavate card");
+    close.title = "Close";
+    close.addEventListener("click", () => this.dismiss());
+    top.appendChild(close);
+    head.appendChild(top);
+    if (this.domain) head.appendChild(el(d, "p", "site", this.provisional && this.state === "report" ? this.domain + " · Quick check, AI review running" : this.domain));
+    head.appendChild(rule(d, "r10"));
+
+    // Verdict line: the label's "Calories" row. Word left, count right in the state colour.
+    const vline = el(d, "div", "vline");
+    const glyph = el(d, "span", "glyph");
+    glyph.dataset.icon = verdict;
+    glyph.setAttribute("aria-hidden", "true");
+    glyph.appendChild(icon(d, verdict));
+    vline.appendChild(glyph);
+    const word = this.state === "checking" ? "Checking the terms" : VERDICT_WORD[this.report!.verdict];
+    vline.appendChild(el(d, "span", "word", word));
+    const count = r ? countText(r, shown.length) : "";
+    if (count) vline.appendChild(el(d, "span", "count", count));
+    head.appendChild(vline);
+    head.appendChild(rule(d, "r4"));
+
     const headline = !r
-      ? "Reading this site's terms before you pay…"
+      ? "Reading this site's terms before you pay\u2026"
       : charge ?? verdictHeadline({ verdict: r.verdict, flags: shown.length ? shown : r.flags });
     const prev = this.inPlace ? this.headlineEl : undefined;
     this.inPlace = false;
@@ -211,7 +250,7 @@ export class Card {
     }
     this.headlineEl = h;
     head.appendChild(h);
-    if (this.domain) head.appendChild(el(d, "p", "site", this.provisional && this.state === "report" ? this.domain + " · Quick check, AI review running" : this.domain));
+    head.appendChild(rule(d, "r1"));
     body.appendChild(head);
 
     // Always visible, in both states: the trial reminder (the action that matters), the toggle
@@ -324,7 +363,7 @@ export class Card {
     const move = card.querySelector<HTMLElement>(".move");
     if (move) {
       const to = side === "right" ? "left" : "right";
-      move.textContent = side === "right" ? "←" : "→";
+      move.replaceChildren(icon(this.doc, side === "right" ? "left" : "right"));
       move.setAttribute("aria-label", `Move the Xcavate card to the ${to} side`);
       move.title = `Move to the ${to}`;
     }
@@ -333,19 +372,14 @@ export class Card {
   private flagItem(f: Flag, index: number): HTMLElement {
     const d = this.doc;
     const li = el(d, "li", "flag");
-    const sev = el(d, "span", "sev");
-    sev.dataset.sev = f.severity;
-    sev.setAttribute("aria-hidden", "true");
-    for (let i = 0; i < 3; i++) sev.appendChild(d.createElement("i"));
-    li.appendChild(sev);
-    const text = el(d, "div", "");
+    li.dataset.sev = f.severity;
     const title = el(d, "p", "flag-title", f.title);
     title.appendChild(el(d, "small", "", SEVERITY_WORD[f.severity]));
-    text.appendChild(title);
-    text.appendChild(el(d, "p", "flag-sum", f.summary));
-    if (f.context) text.appendChild(el(d, "p", "flag-ctx", f.context));
-    if (f.rightsNote) text.appendChild(rightsBox(d, f.rightsNote, "rights-" + index));
-    li.appendChild(text);
+    li.appendChild(title);
+    li.appendChild(el(d, "p", "flag-sum", f.summary));
+    if (f.context) li.appendChild(el(d, "p", "flag-ctx", f.context));
+    if (f.quote) li.appendChild(quoteNote(d, f.quote, f.policyUrl, "see-" + index));
+    if (f.rightsNote) li.appendChild(rightsBox(d, f.rightsNote, "rights-" + index));
     return li;
   }
 
@@ -386,20 +420,7 @@ export class Card {
     const quote = r.trial?.quote || trialFlag?.quote || shown[0]?.quote;
     const from = r.trial?.quote ? trialFlag : trialFlag ?? shown[0];
     const url = from?.policyUrl || policyUrl;
-    if (quote) {
-      const bq = el(d, "blockquote", "quote");
-      bq.appendChild(el(d, "p", "", "\u201C" + quote + "\u201D"));
-      const link = url ? textFragmentUrl(url, quote) : "";
-      if (link) {
-        const a = el(d, "a", "see", "See in policy") as HTMLAnchorElement;
-        a.href = link;
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        a.dataset.xcKey = "see";
-        bq.appendChild(a);
-      }
-      wrap.prepend(bq);
-    }
+    if (quote) wrap.prepend(quoteNote(d, quote, url, "see"));
     if (wrap.childNodes.length) details.appendChild(wrap);
     return quote ? from : undefined;
   }
@@ -423,6 +444,28 @@ export function rightsBox(d: Document, note: string, keyPrefix?: string): HTMLEl
   }
   box.appendChild(p);
   return box;
+}
+
+/** The proof, set like a label footnote: the exact sentence, then a link to it in the policy. */
+function quoteNote(d: Document, quote: string, url: string | undefined, key: string): HTMLElement {
+  const bq = el(d, "blockquote", "quote");
+  bq.appendChild(el(d, "p", "", "\u201C" + quote + "\u201D"));
+  const link = url ? textFragmentUrl(url, quote) : "";
+  if (link) {
+    const a = el(d, "a", "see", "See in policy") as HTMLAnchorElement;
+    a.href = link;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.dataset.xcKey = key;
+    bq.appendChild(a);
+  }
+  return bq;
+}
+
+function rule(d: Document, weight: "r10" | "r4" | "r1"): HTMLElement {
+  const r = el(d, "span", "rule " + weight);
+  r.setAttribute("aria-hidden", "true");
+  return r;
 }
 
 function button(d: Document, cls: string, text: string, key: string): HTMLElement {

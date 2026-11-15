@@ -1,7 +1,6 @@
 import {
   CATEGORY_LABEL,
   DISCLAIMER,
-  VERDICT_ICON,
   VERDICT_WORD,
   textFragmentUrl,
   verdictHeadline,
@@ -16,6 +15,7 @@ import {
   buildCancellationMailto,
   buildTrialReminder,
   contactHref,
+  countText,
   linkParts,
   partialNote,
   RIGHTS_LABEL,
@@ -23,6 +23,7 @@ import {
   trialPolicyUrl,
 } from "../lib/actions";
 import { formatMoney } from "../lib/money";
+import { icon, type IconName } from "../content/icons";
 
 /** U-03 popup report, U-04 settings, F-03/F-04/F-05 sections. Pure DOM rendering, testable in jsdom. */
 
@@ -175,12 +176,14 @@ export function renderPopup(root: HTMLElement, view: PopupView, actions: PopupAc
 }
 
 function header(view: PopupView, report: Report | undefined, status: string): HTMLElement {
-  let glyph = "·";
+  let mark: IconName | undefined;
   let word = "Xcavate";
+  let count = "";
   let headline = "Digs up the fine print before you pay";
   if (report) {
-    glyph = VERDICT_ICON[report.verdict];
+    mark = report.verdict;
     word = VERDICT_WORD[report.verdict];
+    count = countText(report, report.flags.length);
     // The shared headline caps at the card's 3 flags; the popup lists every flag, so count them all.
     headline =
       report.verdict === "red"
@@ -189,26 +192,25 @@ function header(view: PopupView, report: Report | undefined, status: string): HT
           : report.flags.length + " things to read before you pay"
         : verdictHeadline(report);
   } else if (status === "checking") {
-    glyph = "…";
+    mark = "checking";
     word = "Checking";
     headline = "Reading the fine print";
   } else if (status === "error") {
-    glyph = "?";
+    mark = "unknown";
     word = "No answer";
     headline = "Couldn't check this site right now";
   }
-  const strata = h("div", { class: "strata", "aria-hidden": "true" }, h("span"), h("span"), h("span"), h("span"), h("span"));
+  const glyph = mark ? h("span", { class: "glyph", "aria-hidden": "true", "data-icon": mark }) : null;
+  if (glyph && mark) glyph.append(icon(document, mark));
   return h(
     "header",
     { class: "verdict" },
-    strata,
-    h(
-      "div",
-      { class: "verdict-body" },
-      h("div", { class: "top" }, h("span", { class: "glyph", "aria-hidden": "true" }, glyph), h("span", { class: "word" }, word)),
-      h("h1", { role: "status" }, headline),
-      view.domain ? h("p", { class: "site" }, view.domain) : null,
-    ),
+    h("div", { class: "top" }, h("span", { class: "title" }, "Terms Facts"), icon(document, "mark", "mark")),
+    view.domain ? h("p", { class: "site" }, view.domain) : null,
+    h("span", { class: "rule r10", "aria-hidden": "true" }),
+    h("div", { class: "vline" }, glyph, h("span", { class: "word" }, word), count ? h("span", { class: "count" }, count) : null),
+    h("span", { class: "rule r4", "aria-hidden": "true" }),
+    h("h1", { role: "status" }, headline),
   );
 }
 
@@ -344,7 +346,6 @@ function reportSections(report: Report, view: PopupView): { lead: HTMLElement[];
 }
 
 function flagItem(f: Flag): HTMLElement {
-  const sev = h("span", { class: "sev", "data-sev": f.severity, "aria-hidden": "true" }, h("i"), h("i"), h("i"));
   const body = h(
     "div",
     {},
@@ -352,7 +353,7 @@ function flagItem(f: Flag): HTMLElement {
     h("p", { class: "sum" }, f.summary),
     f.context ? h("p", { class: "ctx" }, f.context) : null,
     f.costImpact ? h("p", { class: "cost" }, "Cost: " + f.costImpact) : null,
-    f.quote ? h("blockquote", {}, f.quote) : null,
+    f.quote ? h("blockquote", {}, "\u201C" + f.quote + "\u201D") : null,
     f.quote && f.policyUrl
       ? h(
           "p",
@@ -363,7 +364,7 @@ function flagItem(f: Flag): HTMLElement {
       : null,
     f.rightsNote ? rightsBox(f.rightsNote) : null,
   );
-  return h("li", { class: "flag", "data-sev": f.severity }, sev, body);
+  return h("li", { class: "flag", "data-sev": f.severity }, body);
 }
 
 function rightsBox(note: string): HTMLElement {

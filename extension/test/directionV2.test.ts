@@ -40,7 +40,7 @@ describe("1. V-02 partial verdict", () => {
     card.showReport(PARTIAL);
     const root = card.shadow;
     expect(root.querySelector(".card")?.getAttribute("data-verdict")).toBe("partial");
-    expect(root.querySelector(".glyph")?.textContent).toBe("◐");
+    expect(root.querySelector<HTMLElement>(".glyph")?.dataset.icon).toBe("partial");
     expect(root.querySelector(".word")?.textContent).toBe("Partly read");
     expect(root.querySelector(".coverage")?.textContent).toBe("Couldn't read the terms. Open it and press Scan this page.");
     expect(root.textContent).not.toContain("Looks fair");
@@ -141,8 +141,10 @@ describe("3. V-05 charge-date headline and reminder on the card", () => {
     expect(cal.href).toMatch(/^https:\/\/calendar\.google\.com\/calendar\/render\?action=TEMPLATE/);
     const ics = root.querySelector('.remind a[download]') as HTMLAnchorElement;
     expect(ics.getAttribute("href")).toMatch(/^data:text\/calendar;charset=utf-8,BEGIN%3AVCALENDAR/);
+    // Every shown flag carries its proof, but the trial sentence leads and is never repeated.
     const quotes = root.querySelectorAll("blockquote");
-    expect(quotes).toHaveLength(1);
+    const texts = Array.from(quotes, (q) => q.querySelector("p")?.textContent);
+    expect(new Set(texts).size).toBe(texts.length);
     expect(quotes[0].textContent).toContain("automatically convert to a paid monthly plan");
     expect((quotes[0].querySelector("a") as HTMLAnchorElement).getAttribute("href")).toContain("#:~:text=");
     // The trial flag is the quote, so it is not repeated; the other money flags follow; arbitration never.
