@@ -68,8 +68,8 @@ describe('judge demo', () => {
     expect(doc.getElementById('stage-launch')!.hasAttribute('href')).toBe(false);
     expect(doc.getElementById('evidence-figure')!.textContent).toBe('97%');
     expect(doc.getElementById('stage-evidence')!.hidden).toBe(false);
-    expect(doc.getElementById('stage-line')!.textContent).toContain('site-reputation checks');
-    expect(doc.getElementById('stage-line')!.textContent).toContain('suspected phishing');
+    expect(doc.getElementById('stage-line')!.textContent).toContain('building site-reputation and phishing checks');
+    expect(doc.getElementById('stage-line')!.textContent).toContain('phishing checks');
     expect(doc.querySelector<HTMLAnchorElement>('#evidence-source')!.href).toContain('priv.gc.ca/en/opc-news/');
     doc.getElementById('stage-next')!.click();
     expect(doc.querySelector<HTMLAnchorElement>('#stage-launch')!.href).toContain('streamnest.localhost:4000/checkout');

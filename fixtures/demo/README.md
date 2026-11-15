@@ -34,7 +34,7 @@ The fixture directory remains at http://localhost:4000/fixtures. Static assets r
 
 ## Opening evidence and positioning
 
-The 45-second opening positions Xcavate as an everyday decision helper, organized around four questions: What will this cost? What am I agreeing to? What happens to my data? How can I get out? It asks about family members and includes the shopper themselves; it does not assume older people cannot use technology.
+The 45-second opening positions Xcavate as an everyday decision helper, organized around four questions: What will this cost? What am I agreeing to? What happens to my data? How can I get out? It starts with the consequences of an everyday click: recurring charges, extra fees, and data sharing. It then explains the browser companion in plain language and leads directly into checkout.
 
 The opening screen cites the [2024 global privacy sweep, reported by the Privacy Commissioner of Canada](https://www.priv.gc.ca/en/opc-news/news-and-announcements/2024/nr-c_240709/). Of more than 1,000 websites and apps reviewed, 97% used one or more deceptive design patterns that may influence people to provide more personal information. This was the reviewed sample, not all websites, a monetary-loss estimate, or a finding that 97% of sites are scams. The figure stays on screen; the spoken hook focuses on everyday decisions. The Amazon settlement and subscription-only prevalence figure have been removed.
 
