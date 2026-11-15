@@ -4,9 +4,7 @@ dist
 data/
 *.log
 .DS_Store
-# local planning docs and notes (not published)
-BUILD_PLAN.md
-docs/
+# planning docs are published temporarily (owner asked on 2026-11-14 to remove them after 12 hours)
 *.doc
 *.docx
 *.pdf
