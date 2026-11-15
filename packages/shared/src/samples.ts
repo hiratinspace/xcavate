@@ -40,7 +40,7 @@ export const SAMPLE_REPORT_RED: Report = {
       severity: "high",
       title: "Cancel by phone only, 30 days' notice",
       summary: "You can only cancel by calling, and you must give 30 days' notice.",
-      quote: "Cancellations must be made by telephone and require at least 30 days' notice before your next billing date.",
+      quote: "Cancellations must be made by telephone at 1-800-555-0199 and require at least 30 days' notice before your next billing date.",
       policyUrl: STREAMNEST_TERMS,
       paragraphIndex: 11,
       source: "llm",
@@ -69,7 +69,7 @@ export const SAMPLE_REPORT_RED: Report = {
     steps: ["Call 1-800-555-0199 (Mon to Fri, 9am to 5pm)", "Ask to cancel your membership", "Give at least 30 days' notice"],
     noticeDays: 30,
     contact: "1-800-555-0199",
-    quote: "Cancellations must be made by telephone and require at least 30 days' notice before your next billing date.",
+    quote: "Cancellations must be made by telephone at 1-800-555-0199 and require at least 30 days' notice before your next billing date.",
   },
   policies: [
     { url: STREAMNEST_SUB, kind: "subscription", textHash: "a".repeat(64), status: "analyzed" },

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Checkout | FairBox</title>
+  <style>:root{--brand:#1f7a4d}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#1d1d1f;background:#fafafa}
+a{color:var(--brand)}
+.wrap{max-width:980px;margin:0 auto;padding:0 20px}
+.site-header{background:var(--brand);color:#fff}
+.site-header .wrap{display:flex;align-items:center;justify-content:space-between;height:64px}
+.logo{color:#fff;font-weight:800;font-size:22px;text-decoration:none;letter-spacing:-.5px}
+.site-header nav a{color:#fff;margin-left:20px;text-decoration:none;opacity:.9}
+.promo{background:#111;color:#eee;text-align:center;font-size:13px;padding:6px}
+main{padding:32px 0 48px}
+.site-footer{background:#202124;color:#bbb;font-size:14px;padding:28px 0}
+.site-footer a{color:#ddd;margin-right:18px}
+.site-footer .note{margin-top:12px;font-size:12px;color:#888}
+.policy{background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:32px 40px;max-width:780px}
+.policy h1{margin-top:0}
+.policy .updated{color:#666;font-size:14px}
+.policy h2{font-size:20px;margin-top:32px}
+.toc{background:#f6f6f6;border-radius:8px;padding:12px 20px;font-size:14px}
+.btn{display:inline-block;background:var(--brand);color:#fff;border:0;border-radius:8px;padding:12px 22px;font-size:16px;font-weight:600;cursor:pointer;text-decoration:none}
+.btn.secondary{background:#fff;color:var(--brand);border:2px solid var(--brand)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:32px}
+.card{background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:24px}
+.hero-img{aspect-ratio:4/3;border-radius:10px;background:linear-gradient(135deg,var(--brand),#ddd)}
+label{display:block;font-size:14px;font-weight:600;margin:12px 0 4px}
+label.inline{display:inline;font-weight:400}
+input[type=text],input[type=email],input[type=tel]{width:100%;padding:10px;border:1px solid #ccc;border-radius:6px;font-size:16px}
+.row{display:flex;gap:12px}.row>div{flex:1}
+.summary table{width:100%;border-collapse:collapse}
+.summary td{padding:6px 0}.summary td.amt{text-align:right}
+.summary tr.total td{border-top:1px solid #ddd;font-weight:700;padding-top:10px}
+.legal-note{font-size:13px;color:#555}
+</style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="logo" href="/">FairBox</a>
+      <nav aria-label="Main"><a href="/">Shop</a><a href="/#about">About</a><a href="/checkout">Basket (1)</a></nav>
+    </div>
+  </header>
+  <main>
+    <div class="wrap">
+      <section class="grid">
+        <form class="card" id="checkout" onsubmit="return false" novalidate>
+          <h1>Checkout</h1>
+          <h2>Delivery</h2>
+
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" autocomplete="email" placeholder="you@example.com">
+          <label for="name">Full name</label>
+          <input type="text" id="name" name="name" autocomplete="name">
+          <label for="address">Address</label>
+          <input type="text" id="address" name="address" autocomplete="street-address">
+          <div class="row">
+            <div><label for="city">City</label><input type="text" id="city" name="city" autocomplete="address-level2"></div>
+            <div><label for="zip">ZIP code</label><input type="text" id="zip" name="zip" autocomplete="postal-code"></div>
+          </div>
+          <p><input type="checkbox" id="newsletter" name="newsletter"> <label class="inline" for="newsletter">Email me when new products arrive</label></p>
+          <h2>Payment</h2>
+
+          <label for="cc-name">Name on card</label>
+          <input type="text" id="cc-name" name="ccname" autocomplete="cc-name" placeholder="Alex Example">
+          <label for="cc-number">Card number</label>
+          <input type="text" id="cc-number" name="cardnumber" autocomplete="cc-number" inputmode="numeric" placeholder="4242 4242 4242 4242">
+          <div class="row">
+            <div><label for="cc-exp">Expiry (MM/YY)</label><input type="text" id="cc-exp" name="cc-exp" autocomplete="cc-exp" placeholder="12/29"></div>
+            <div><label for="cc-csc">CVC</label><input type="text" id="cc-csc" name="cvc" autocomplete="cc-csc" inputmode="numeric" placeholder="123"></div>
+          </div>
+          <div class="pay" style="margin-top:20px">
+            <button type="button" class="btn" id="pay" onclick="document.getElementById('test-notice').hidden=false">Place order</button>
+            <p class="legal-note" id="agree">By placing your order you agree to our <a href="/terms">Terms of Service</a>, <a href="/refunds">Refund Policy</a> and <a href="/privacy">Privacy Policy</a>.</p>
+            <p id="test-notice" class="legal-note" hidden>This is a fictional test store. Nothing was submitted and nothing was charged.</p>
+          </div>
+        </form>
+        <aside class="card summary" aria-label="Order summary">
+          <h2>Order summary</h2>
+          <ul><li>Stonewashed linen throw, oat &times; 1</li></ul>
+          <table id="order-summary">
+            <tr><td>Subtotal</td><td class="amt">$64.00</td></tr>
+            <tr><td>Shipping</td><td class="amt">Free</td></tr>
+            <tr><td>Tax</td><td class="amt">$5.12</td></tr>
+            <tr class="total"><td>Total</td><td class="amt">$69.12</td></tr>
+          </table>
+        </aside>
+      </section>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <a href="/refunds">Refunds and Returns</a>
+      <a href="/terms">Terms of Service</a>
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/">Contact</a>
+      <div class="note">&copy; 2026 FairBox Home Goods Ltd.. FairBox is a fictional company created to test the Xcavate browser extension. Nothing here is for sale.</div>
+    </div>
+  </footer>
+</body>
+</html>

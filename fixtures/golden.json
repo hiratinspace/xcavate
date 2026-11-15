@@ -1,0 +1,44 @@
+{
+  "sites": [
+    {
+      "id": "streamnest",
+      "name": "StreamNest",
+      "checkoutPath": "/checkout",
+      "verdict": "red",
+      "categories": ["trial_converts", "auto_renewal", "cancellation_friction"],
+      "forbidden": ["no_refund", "return_cost", "arbitration", "termination_fee"]
+    },
+    {
+      "id": "gadgetly",
+      "name": "Gadgetly",
+      "checkoutPath": "/checkout",
+      "verdict": "yellow",
+      "categories": ["return_cost", "arbitration"],
+      "forbidden": ["auto_renewal", "trial_converts", "cancellation_friction", "termination_fee", "no_refund"]
+    },
+    {
+      "id": "fairbox",
+      "name": "FairBox",
+      "checkoutPath": "/checkout",
+      "verdict": "green",
+      "categories": [],
+      "forbidden": ["auto_renewal", "trial_converts", "cancellation_friction", "termination_fee", "no_refund", "return_cost", "price_change", "extra_fees", "arbitration", "data_sharing", "missing_policy"]
+    },
+    {
+      "id": "sneakyterms",
+      "name": "SneakyTerms",
+      "checkoutPath": "/checkout",
+      "verdict": "red",
+      "categories": ["no_refund", "termination_fee"],
+      "forbidden": ["missing_policy"]
+    },
+    {
+      "id": "sneakyterms_quoted",
+      "name": "SneakyTerms (instruction inside a quotation)",
+      "checkoutPath": "/terms-quoted",
+      "verdict": "red",
+      "categories": ["no_refund", "termination_fee"],
+      "forbidden": ["missing_policy"]
+    }
+  ]
+}
