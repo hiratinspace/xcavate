@@ -125,7 +125,7 @@ The loop every change went through:
 | V-09 | Deploy the backend and ship a packed `.zip` | Deferred by the owner until the tool works end to end |
 | V-12 | Pitch rewrite around proof + action; honest comparison with TermAlert, AgreeGuard and Gemini | After V-03 numbers exist |
 
-**Known limits:** JavaScript-rendered and bot-protected policy pages need the "Scan this page" fallback (common on ticketing and gym sites); DNS rebinding can't be fully stopped by hostname checks (leaked text only reaches the Xcavate backend); English only; no PDFs; Chrome only.
+**Known limits:** JavaScript-rendered and bot-protected policy pages need the "Scan this page" fallback (common on ticketing and gym sites); DNS rebinding can't be fully stopped by hostname checks (leaked text only reaches the Xcavate backend); change alerts rely on client-submitted policy snapshots, so a determined anonymous flood can suppress them for a URL (it cannot fake one: versions are keyed by text hash); the proper fix for both is server-side fetching of policy URLs; English only; no PDFs; Chrome only.
 
 ## 7. Before you start
 

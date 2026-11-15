@@ -115,6 +115,26 @@ export function isInternalHost(hostname: string): boolean {
 }
 
 /**
+ * Is the PAGE genuinely on the local network? Stricter than isInternalHost: name heuristics
+ * (wildcard-DNS domains like nip.io, IPs spelled inside labels) only ever make a TARGET stricter.
+ * They must never make a page trusted, because anyone can register a public name such as
+ * printer-192-168-1-1.example.com. Only literal private/loopback IPs and names that cannot resolve
+ * through public DNS (localhost, *.localhost, .local, .internal, .intranet, .lan, .home.arpa,
+ * single-label names) count.
+ */
+export function isTrustedLocalPage(hostname: string): boolean {
+  let h = hostname.toLowerCase().replace(/\.$/, "");
+  if (h.startsWith("[") && h.endsWith("]")) return isPrivateV6(h.slice(1, -1));
+  if (h.includes(":")) return isPrivateV6(h);
+  h = canonicalHost(h);
+  if (h === "localhost" || h.endsWith(".localhost")) return true;
+  if (h.endsWith(".local") || h.endsWith(".internal") || h.endsWith(".intranet") || h.endsWith(".lan") || h.endsWith(".home.arpa")) return true;
+  const v4 = ipv4Parts(h);
+  if (v4) return isPrivateV4(v4);
+  return !h.includes(".");
+}
+
+/**
  * May a page at `pageUrl` make the extension fetch `targetUrl`? http(s) only; internal targets only
  * when the page itself is internal.
  */
@@ -130,7 +150,7 @@ export function isFetchAllowed(targetUrl: string, pageUrl: string | undefined): 
   if (!pageUrl) return false;
   try {
     const page = new URL(pageUrl);
-    return (page.protocol === "http:" || page.protocol === "https:") && isInternalHost(page.hostname);
+    return (page.protocol === "http:" || page.protocol === "https:") && isTrustedLocalPage(page.hostname);
   } catch {
     return false;
   }
