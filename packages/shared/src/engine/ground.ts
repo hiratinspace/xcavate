@@ -44,8 +44,31 @@ function amountIn(c: Corpus, amount: string): boolean {
 }
 
 const PHONE = /(?:\+?\d[\d ().-]{7,}\d)/g;
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const URL = /\bhttps?:\/\/[^\s)]+|\bwww\.[^\s)]+/gi;
+const EMAIL_LOCAL = /^[A-Za-z0-9._%+-]+$/;
+const EMAIL_DOMAIN = /^(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}$/;
+const CONTACT_TRIM_CHARS = new Set(['<', '>', '(', ')', '[', ']', '{', '}', '"', "'", '.', ',', '!', '?', ';', ':']);
+
+function trimContactToken(token: string): string {
+  let start = 0;
+  let end = token.length;
+  while (start < end && CONTACT_TRIM_CHARS.has(token[start]!)) start += 1;
+  while (end > start && CONTACT_TRIM_CHARS.has(token[end - 1]!)) end -= 1;
+  return token.slice(start, end);
+}
+
+function emails(s: string): string[] {
+  const out: string[] = [];
+  for (const raw of s.split(/\s+/)) {
+    const token = trimContactToken(raw);
+    const at = token.indexOf("@");
+    if (at <= 0 || at !== token.lastIndexOf("@") || at === token.length - 1) continue;
+    const local = token.slice(0, at);
+    const domain = token.slice(at + 1);
+    if (EMAIL_LOCAL.test(local) && EMAIL_DOMAIN.test(domain)) out.push(token);
+  }
+  return out;
+}
 
 /** Phone numbers, emails and URLs in `s` all appear in the policy text. */
 export function contactsGrounded(s: string, c: Corpus): boolean {
@@ -54,7 +77,7 @@ export function contactsGrounded(s: string, c: Corpus): boolean {
     const d = digits(p);
     if (d.length >= 7 && !digitCorpus.some((t) => t.includes(d))) return false;
   }
-  for (const e of [...(s.match(EMAIL) ?? []), ...(s.match(URL) ?? [])]) if (!inCorpus(c, e)) return false;
+  for (const e of [...emails(s), ...(s.match(URL) ?? [])]) if (!inCorpus(c, e)) return false;
   return true;
 }
 
