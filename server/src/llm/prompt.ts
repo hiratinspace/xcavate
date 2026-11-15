@@ -5,8 +5,30 @@ const CATEGORIES = CATEGORY_ORDER.filter((c) => c !== "missing_policy");
 
 const categoryList = CATEGORIES.map((c) => "- " + c + ": " + CATEGORY_MEANING[c]).join("\n");
 
+/**
+ * V-01 rubric, server-side until packages/shared SEVERITY_RUBRIC is updated (next contract round).
+ * Code re-decides auto_renewal and trial_converts severity anyway (score.ts recalibrate);
+ * this text keeps the model's proposal in line with it.
+ */
+export const RUBRIC_V2: Partial<Record<(typeof CATEGORIES)[number], { high?: string; medium?: string; low?: string }>> = {
+  auto_renewal: {
+    high: "renewal combined with harsh terms: cancel only by phone or mail, or 30+ days' notice",
+    medium: "yearly or prepaid renewal with no online way to cancel, or the price after renewal can rise",
+    low: "plain monthly or yearly renewal you can cancel online (normal for subscriptions)",
+  },
+  trial_converts: {
+    high: "converts automatically AND to a yearly/prepaid plan, or with no reminder, or cancel only by phone/mail",
+    medium: "a normal free trial that converts to a monthly plan you can cancel online",
+  },
+  arbitration: { low: "forced arbitration or class-action waiver (reported for information, does not affect the verdict)" },
+  data_sharing: {
+    medium: "sells personal data (reported for information, does not affect the verdict)",
+    low: "shares with partners (for information only)",
+  },
+};
+
 const rubric = CATEGORIES.map((c) => {
-  const r = SEVERITY_RUBRIC[c];
+  const r = RUBRIC_V2[c] ?? SEVERITY_RUBRIC[c];
   const parts = (["high", "medium", "low"] as const).filter((s) => r[s]).map((s) => s + " when " + r[s]);
   return "- " + c + ": " + parts.join("; ") + " (never above " + SEVERITY_CAPS[c] + ")";
 }).join("\n");

@@ -131,9 +131,9 @@ function priceWithPeriod(c: Ctx): string | undefined {
 const TRIAL_VERB =
   /\b(automatic(ally)?|will be (charged|billed)|we will charge|you will pay|converts?|convert(ed)? (in)?to|becomes? a paid|be charged|be billed|start(s)? (charging|billing))\b/g;
 
-const YEARLY = /\b(annual(ly)?|yearly|each year|every year|per year|12-month|twelve-month|one-year|1-year)\b/;
+export const YEARLY = /\b(annual(ly)?|yearly|each year|every year|per year|12-month|twelve-month|one-year|1-year)\b/;
 const NO_REMINDER = /without (prior |advance |any )?(notice|reminder|notifying|notification)|no (reminder|notice) (will be|is) (sent|given)/;
-const AUTO_CHARGE = /\b(automatic(ally)?|will be (charged|billed)|we will charge|unless you cancel|charged (to|on) (your|the) (card|payment method))\b/;
+export const AUTO_CHARGE = /\b(automatic(ally)?|will be (charged|billed)|we will charge|unless you cancel|charged (to|on) (your|the) (card|payment method))\b/;
 
 function noticeDays(t: string): number | undefined {
   const a = new RegExp(NUM + "[- ](calendar |business )?days?'?s?'? (prior |advance |written )?notice").exec(t);
@@ -487,6 +487,36 @@ export function matchParagraph(p: Paragraph): RuleHit[] {
 }
 
 /** All rule hits in a list of paragraphs, in document order. */
+// ---------- document-level facts used to calibrate severity (V-01) ----------
+
+function sentencesLower(paragraphs: Paragraph[]): string[] {
+  return paragraphs.flatMap((p) => splitSentences(p.text).map(lpNormalize));
+}
+
+/** The policy offers a self-serve or online way to cancel (account settings, online, app, email). */
+export function offersOnlineCancel(paragraphs: Paragraph[]): boolean {
+  return sentencesLower(paragraphs).some((t) => CANCEL.test(t) && hasAltChannel(t));
+}
+
+/** The policy says no reminder or notice comes before a renewal or trial charge. */
+export function statesNoReminder(paragraphs: Paragraph[]): boolean {
+  const RE =
+    /\b(without (prior |advance |any )?(notice|reminder|notifying you|notification)|(we|will) (do not|don't|will not|won't) (send|give|provide) (you )?(a |any )?(reminder|notice|notification)|no (reminder|notice|notification) (will be|is) (sent|given|provided))/;
+  return sentencesLower(paragraphs).some((t) => RE.test(t) && /\b(renew|trial|charge|bill)/.test(t));
+}
+
+/** Prepaid or yearly terms ("annual plan", "billed annually", "paid in advance"). */
+export function isYearlyOrPrepaid(text: string): boolean {
+  const t = lpNormalize(text);
+  return YEARLY.test(t) || /\b(prepaid|pre-paid|paid in advance|pay (up ?front|in advance)|upfront payment)\b/.test(t);
+}
+
+/** A sentence that makes phone or mail the only way to cancel. */
+export function isPhoneOrMailOnly(text: string): boolean {
+  const t = lpNormalize(text);
+  return CANCEL.test(t) && PHONE_OR_MAIL.test(t) && !hasAltChannel(t);
+}
+
 export function runRules(paragraphs: Paragraph[]): RuleHit[] {
   return paragraphs.flatMap(matchParagraph);
 }

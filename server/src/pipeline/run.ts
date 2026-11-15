@@ -36,8 +36,9 @@ import {
 } from "./ground.js";
 import type { Corpus } from "./ground.js";
 import { prefilter } from "./prefilter.js";
-import { bestPerCategory, runRules } from "./rules.js";
-import { MISSING_POLICY_FLAG, applyCaps, computeVerdict, needsMissingPolicy, sortFlags } from "./score.js";
+import { bestPerCategory, offersOnlineCancel, runRules, statesNoReminder } from "./rules.js";
+import { MISSING_POLICY_FLAG, applyCaps, computeVerdict, needsMissingPolicy, recalibrate, sortFlags } from "./score.js";
+import { rightsNotes, withRightsNotes } from "./rights.js";
 import { splitParagraphs } from "./split.js";
 import type { Paragraph } from "./split.js";
 import { clip, clipWords } from "./textutil.js";
@@ -48,7 +49,7 @@ import type { VerifiablePolicy } from "./verify.js";
  * Bump whenever rules, prompts or merging change in a way that changes reports, so cached
  * analyses from an older pipeline are never served (part of the cache key).
  */
-export const PIPELINE_VERSION = 2;
+export const PIPELINE_VERSION = 3;
 
 export const DEFAULT_DEADLINE_MS = 12_000;
 
@@ -114,7 +115,10 @@ export async function runAnalysis(req: AnalyzeRequest, deps: PipelineDeps): Prom
   const domain = domainOf(req.pageUrl);
   const prepared = await Promise.all(req.policies.map(prepare));
 
-  for (const p of prepared) if (p.readable) store.putSnapshot(p.input.url, p.textHash, p.text);
+  // Snapshots feed change alerts. A manual scan ("other" on a non-checkout page) is the live page
+  // the user is looking at and may hold their personal data, so it is never stored.
+  const manualScan = (p: Prepared) => p.input.kind === "other" && req.pageType === "none";
+  for (const p of prepared) if (p.readable && !manualScan(p)) store.putSnapshot(p.input.url, p.textHash, p.text);
 
   const key = analysisKey(
     prepared.map((p) => p.textHash),
@@ -132,14 +136,17 @@ export async function runAnalysis(req: AnalyzeRequest, deps: PipelineDeps): Prom
     store.putAnalysis(key, value);
   }
 
-  const analyzedCount = analysis.policies.filter((p) => p.status === "analyzed").length;
+  const analyzedKinds = analysis.policies.filter((p) => p.status === "analyzed").map((p) => p.kind);
+  const analyzedCount = analyzedKinds.length;
   let flags = analysis.flags;
   if (needsMissingPolicy(req, analyzedCount)) flags = sortFlags([...flags, MISSING_POLICY_FLAG]);
+  // V-08: rights notes depend on the page, so they are added per request, not cached.
+  flags = withRightsNotes(flags, rightsNotes({ flags, trial: analysis.trial, cancellation: analysis.cancellation }, req.pageUrl));
 
   const report: Report = {
     schemaVersion: 1,
     domain,
-    verdict: computeVerdict(flags, analyzedCount),
+    verdict: computeVerdict(flags, analyzedKinds),
     flags,
     ...(analysis.trial ? { trial: analysis.trial } : {}),
     ...(analysis.cancellation ? { cancellation: analysis.cancellation } : {}),
@@ -311,7 +318,19 @@ async function analyzeFresh(
     } else if (r) flags.push(await toFlag(r, prepared, "rules"));
     else if (l) flags.push(await toFlag(l, prepared, "llm"));
   }
-  const finalFlags = sortFlags(applyCaps(flags));
+  // V-01: renewal and trial severity follow the whole document (online cancel path, harsh
+  // cancellation, reminders, price rises), decided in code for rules and model flags alike.
+  const allParagraphs = readable.flatMap(({ p }) => p.paragraphs);
+  const capped = applyCaps(flags);
+  const calibrated = recalibrate(capped, {
+    onlineCancel: offersOnlineCancel(allParagraphs),
+    harshCancel: capped.some((f) => f.category === "cancellation_friction" && f.severity === "high"),
+    noReminder: statesNoReminder(allParagraphs),
+    priceCanRise: capped.some((f) => f.category === "price_change"),
+  });
+  // The mock is the rules engine, not a model: its agreement is not a second opinion (V-03).
+  const isModel = llm.provider !== "mock";
+  const finalFlags = sortFlags(applyCaps(calibrated)).map((f) => (isModel ? f : { ...f, source: "rules" as const }));
 
   // Trial and cancellation: the model's answer where the text backs it, gaps filled from rules (A-10).
   const allParas = readable.flatMap(({ p }) => p.paragraphs);
@@ -327,7 +346,7 @@ async function analyzeFresh(
     ...(cancellation ? { cancellation } : {}),
     policies: prepared.map(meta),
     droppedUnverified,
-    usedLlm: out !== undefined,
+    usedLlm: out !== undefined && isModel,
     cacheable: !llmFailed,
   };
 }

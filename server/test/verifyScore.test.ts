@@ -1,4 +1,4 @@
-import type { Flag } from "@xcavate/shared";
+import type { Flag, PolicyKind } from "@xcavate/shared";
 import { describe, expect, it } from "vitest";
 import { MISSING_POLICY_FLAG, applyCaps, capSeverity, computeVerdict, needsMissingPolicy, sortFlags } from "../src/pipeline/score.js";
 import { splitParagraphs } from "../src/pipeline/split.js";
@@ -63,14 +63,21 @@ describe("score", () => {
     expect(sorted.map((f) => f.category)).toEqual(["auto_renewal", "no_refund", "return_cost", "arbitration"]);
   });
 
-  const table: [string, Flag[], number, string][] = [
-    ["any high -> red", [flag("no_refund", "high"), flag("arbitration", "low")], 1, "red"],
-    ["a medium -> yellow", [flag("return_cost", "medium")], 1, "yellow"],
-    ["two lows -> yellow", [flag("arbitration", "low"), flag("data_sharing", "low")], 1, "yellow"],
-    ["one low -> green", [flag("arbitration", "low")], 1, "green"],
-    ["nothing, analysed -> green", [], 2, "green"],
-    ["nothing readable -> unknown", [], 0, "unknown"],
-    ["missing_policy alone -> yellow", [MISSING_POLICY_FLAG], 0, "yellow"],
+  const table: [string, Flag[], PolicyKind[], string][] = [
+    ["any high -> red", [flag("no_refund", "high"), flag("arbitration", "low")], ["terms"], "red"],
+    ["a medium -> yellow", [flag("return_cost", "medium")], ["refund"], "yellow"],
+    ["two money lows -> yellow", [flag("auto_renewal", "low"), flag("extra_fees", "low")], ["terms"], "yellow"],
+    ["two non-money lows do not count -> green", [flag("arbitration", "low"), flag("data_sharing", "low")], ["terms"], "green"],
+    ["arbitration/data_sharing never count, even medium", [flag("arbitration", "medium"), flag("data_sharing", "medium")], ["terms"], "green"],
+    ["one money low -> green", [flag("auto_renewal", "low")], ["subscription"], "green"],
+    ["nothing, terms analysed -> green", [], ["terms", "privacy"], "green"],
+    ["nothing, refund analysed -> green", [], ["refund"], "green"],
+    ["nothing, manual scan analysed -> green", [], ["other"], "green"],
+    ["only privacy read -> partial", [], ["privacy"], "partial"],
+    ["only privacy read, non-money flag -> partial", [flag("data_sharing", "medium")], ["privacy"], "partial"],
+    ["only privacy read, money medium -> yellow", [flag("extra_fees", "medium")], ["privacy"], "yellow"],
+    ["nothing readable -> unknown", [], [], "unknown"],
+    ["missing_policy alone -> yellow", [MISSING_POLICY_FLAG], [], "yellow"],
   ];
   it.each(table)("%s", (_n, flags, analyzed, verdict) => {
     expect(computeVerdict(flags, analyzed)).toBe(verdict);

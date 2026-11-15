@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import type { ChangeSummary, Report } from "@xcavate/shared";
-import { DEFAULT_TTL_MS, MAX_ENTRIES, MAX_SNAPSHOTS, SNAPSHOTS_PER_URL } from "./store.js";
+import { DEFAULT_TTL_MS, MAX_ENTRIES, MAX_SNAPSHOTS, SNAPSHOTS_PER_URL, SNAPSHOT_MAX_AGE_MS } from "./store.js";
 import type { CachedAnalysis, Store, StoreOptions } from "./store.js";
 
 type DatabaseSyncCtor = typeof DatabaseSyncType;
@@ -93,13 +93,15 @@ export class SqliteStore implements Store {
   }
   putSnapshot(url: string, hash: string, text: string) {
     const seq = (this.db.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM snapshots").get() as { n: number }).n;
+    const t = this.now();
     this.db
       .prepare(
         "INSERT INTO snapshots (url, hash, text, created_at, seq) VALUES (?, ?, ?, ?, ?) " +
           "ON CONFLICT (url, hash) DO UPDATE SET seq = excluded.seq, created_at = excluded.created_at",
       )
-      .run(url, hash, text, this.now(), seq);
-    // Last SNAPSHOTS_PER_URL versions of this URL, and MAX_SNAPSHOTS overall (oldest evicted).
+      .run(url, hash, text, t, seq);
+    // Versions of this URL not seen for 30 days go; then the per-URL safety cap and the global cap.
+    this.db.prepare("DELETE FROM snapshots WHERE url = ? AND created_at < ?").run(url, t - SNAPSHOT_MAX_AGE_MS);
     this.db
       .prepare(
         "DELETE FROM snapshots WHERE url = ? AND hash NOT IN (SELECT hash FROM snapshots WHERE url = ? ORDER BY seq DESC LIMIT ?)",

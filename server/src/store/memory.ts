@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ChangeSummary, Report } from "@xcavate/shared";
-import { DEFAULT_TTL_MS, MAX_ENTRIES, MAX_SNAPSHOTS, SNAPSHOTS_PER_URL } from "./store.js";
+import { DEFAULT_TTL_MS, MAX_ENTRIES, MAX_SNAPSHOTS, SNAPSHOTS_PER_URL, SNAPSHOT_MAX_AGE_MS } from "./store.js";
 import type { CachedAnalysis, Store, StoreOptions } from "./store.js";
 
 interface Entry<T> {
@@ -136,10 +136,14 @@ export class MemoryStore implements Store {
   }
   putSnapshot(url: string, hash: string, text: string) {
     const k = url + "|" + hash;
-    setCapped(this.snapshots, k, { v: text, at: this.now() }, MAX_SNAPSHOTS);
-    // Keep only the most recent versions of this URL.
-    const mine = [...this.snapshots.keys()].filter((x) => x.startsWith(url + "|"));
-    for (const old of mine.slice(0, Math.max(0, mine.length - SNAPSHOTS_PER_URL))) this.snapshots.delete(old);
+    const t = this.now();
+    // Re-submission refreshes last-seen (and moves the entry to the recent end of the Map).
+    setCapped(this.snapshots, k, { v: text, at: t }, MAX_SNAPSHOTS);
+    // Versions of this URL: drop those not seen for 30 days, then apply the per-URL safety cap.
+    const mine = [...this.snapshots.entries()].filter(([x]) => x.startsWith(url + "|"));
+    for (const [old, e] of mine) if (t - e.at >= SNAPSHOT_MAX_AGE_MS) this.snapshots.delete(old);
+    const kept = mine.filter(([, e]) => t - e.at < SNAPSHOT_MAX_AGE_MS);
+    for (const [old] of kept.slice(0, Math.max(0, kept.length - SNAPSHOTS_PER_URL))) this.snapshots.delete(old);
     this.schedule();
   }
   getChange(key: string) {

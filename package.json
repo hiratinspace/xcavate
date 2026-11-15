@@ -10,7 +10,7 @@
     "dev:server": "npm run dev -w @xcavate/server",
     "dev:fixtures": "node fixtures/server.mjs",
     "dev:ext": "npm run dev -w @xcavate/extension",
-    "eval": "npm run eval -w @xcavate/eval",
+    "eval": "npm run eval -w @xcavate/eval --",
     "seed": "npm run seed -w @xcavate/server"
   },
   "devDependencies": {

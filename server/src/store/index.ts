@@ -5,7 +5,7 @@ import { SqliteStore } from "./sqlite.js";
 import type { Store, StoreOptions } from "./store.js";
 
 export type { Store, CachedAnalysis, StoreOptions } from "./store.js";
-export { analysisKey, changeKey, DEFAULT_TTL_MS, MAX_SNAPSHOTS, SNAPSHOTS_PER_URL } from "./store.js";
+export { analysisKey, changeKey, DEFAULT_TTL_MS, MAX_SNAPSHOTS, SNAPSHOTS_PER_URL, SNAPSHOT_MAX_AGE_MS } from "./store.js";
 export { MemoryStore } from "./memory.js";
 export { SqliteStore } from "./sqlite.js";
 

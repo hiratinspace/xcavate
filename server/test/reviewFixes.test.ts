@@ -15,7 +15,7 @@ import { quoteSupportsCategory } from "../src/pipeline/ground.js";
 import { matchParagraph } from "../src/pipeline/rules.js";
 import { PIPELINE_VERSION, runAnalysis } from "../src/pipeline/run.js";
 import { rateLimit } from "../src/routes/rateLimit.js";
-import { MemoryStore, SNAPSHOTS_PER_URL, loadDatabaseSync, openStore } from "../src/store/index.js";
+import { MemoryStore, SNAPSHOTS_PER_URL, SNAPSHOT_MAX_AGE_MS, loadDatabaseSync, openStore } from "../src/store/index.js";
 import type { Store } from "../src/store/index.js";
 import { FakeLlm, memStore, policyText, request as mkReq } from "./helpers.js";
 
@@ -243,18 +243,34 @@ describe("item 6: cache key includes pipeline, provider and model; entries expir
 });
 
 describe("item 7: bounded growth", () => {
-  it.each(["sqlite", "memory"] as const)("%s keeps only the last %s snapshots per URL", (mode) => {
+  it.each(["sqlite", "memory"] as const)("%s keeps snapshot versions by age, not count", (mode) => {
+    let now = 1_000_000_000;
+    const day = 24 * 60 * 60 * 1000;
+    const s = openStore(":memory:", mode, { now: () => now });
+    const u = "https://x.test/terms";
+    s.putSnapshot(u, "genuine", "real v1");
+    // An attacker submits fake versions of the same URL: the genuine one survives.
+    for (let i = 0; i < 5; i++) s.putSnapshot(u, "fake" + i, "fake");
+    expect(s.getSnapshot(u, "genuine")).toBe("real v1");
+    // Re-submission refreshes last-seen, so it survives the 30-day window.
+    now += 20 * day;
+    s.putSnapshot(u, "genuine", "real v1");
+    now += 15 * day;
+    s.putSnapshot(u, "v2", "real v2");
+    expect(s.getSnapshot(u, "genuine")).toBe("real v1");
+    expect(s.getSnapshot(u, "fake0")).toBeUndefined(); // not seen for 35 days
+    expect(s.getSnapshot(u, "v2")).toBe("real v2");
+    expect(SNAPSHOT_MAX_AGE_MS).toBe(30 * day);
+    s.close();
+  });
+
+  it.each(["sqlite", "memory"] as const)("%s applies a per-URL safety cap of SNAPSHOTS_PER_URL", (mode) => {
     const s = openStore(":memory:", mode);
-    for (const h of ["h1", "h2", "h3"]) s.putSnapshot("https://x.test/terms", h, "text " + h);
-    expect(s.getSnapshot("https://x.test/terms", "h1")).toBeUndefined();
-    expect(s.getSnapshot("https://x.test/terms", "h2")).toBe("text h2");
-    expect(s.getSnapshot("https://x.test/terms", "h3")).toBe("text h3");
-    // Re-seeing an old version makes it recent again.
-    s.putSnapshot("https://x.test/terms", "h2", "text h2");
-    s.putSnapshot("https://x.test/terms", "h4", "text h4");
-    expect(s.getSnapshot("https://x.test/terms", "h2")).toBe("text h2");
-    expect(s.getSnapshot("https://x.test/terms", "h3")).toBeUndefined();
-    expect(SNAPSHOTS_PER_URL).toBe(2);
+    for (let i = 0; i <= SNAPSHOTS_PER_URL; i++) s.putSnapshot("https://x.test/t", "h" + i, "t" + i);
+    expect(s.getSnapshot("https://x.test/t", "h0")).toBeUndefined();
+    expect(s.getSnapshot("https://x.test/t", "h1")).toBe("t1");
+    expect(s.getSnapshot("https://x.test/t", "h" + SNAPSHOTS_PER_URL)).toBe("t" + SNAPSHOTS_PER_URL);
+    expect(SNAPSHOTS_PER_URL).toBe(20);
     s.close();
   });
 

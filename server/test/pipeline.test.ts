@@ -14,7 +14,9 @@ describe("runAnalysis", () => {
     expect(r.verdict).toBe("red");
     expect(r.domain).toBe("shop.example.com");
     expect(r.flags.map((f) => f.category)).toEqual(["no_refund", "return_cost"]);
-    expect(r.flags[0].source).toBe("both");
+    // The mock is the rules engine, not a model (V-03).
+    expect(r.flags[0].source).toBe("rules");
+    expect(r.stats.usedLlm).toBe(false);
     expect(r.flags[0].id).toMatch(/^no_refund:[0-9a-f]{8}$/);
   });
 
@@ -28,7 +30,7 @@ describe("runAnalysis", () => {
   it("does not cache a rules-only result after an LLM failure", async () => {
     const store = memStore();
     await runAnalysis(request(policyText(NO_REFUND)), { store, llm: failingLlm() });
-    const again = await runAnalysis(request(policyText(NO_REFUND)), { store, llm: new MockLlm() });
+    const again = await runAnalysis(request(policyText(NO_REFUND)), { store, llm: new FakeLlm() });
     expect(again.cached).toBe(false);
     expect(again.stats.usedLlm).toBe(true);
   });
@@ -77,7 +79,8 @@ describe("runAnalysis", () => {
       llm,
     });
     expect(r.flags[0]).toMatchObject({ category: "arbitration", severity: "medium" });
-    expect(r.verdict).toBe("yellow");
+    // Arbitration is reported but never changes the verdict (V-01).
+    expect(r.verdict).toBe("green");
   });
 
   it("skips the LLM when no paragraph passes the prefilter", async () => {
