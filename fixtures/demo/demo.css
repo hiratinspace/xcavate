@@ -1015,3 +1015,8 @@ body:has(dialog[open]) {
   line-height:1.65;
 }
 .stage-evidence .evidence-support b { color:var(--ink); font-weight:500; }
+
+.stage-body>#stage-launch { margin-top:24px; }
+.stage-notes { margin-top:24px; }
+.stage-notes>summary { cursor:pointer; font-size:11px; color:var(--muted); }
+.stage-notes .stage-bottom { margin-top:20px; }
