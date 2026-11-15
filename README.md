@@ -36,7 +36,6 @@ The scale is real. In 2025, the FBI recorded **$215.8 million in reported phishi
 
 In the current build, privacy findings appear in the full report while the checkout verdict focuses on money risks. Site-reputation checks and phishing warnings are still being built and are not demonstrated by this version. The external figures describe the problem’s scale, not measured losses prevented by Xcavate.
 
-Start with the [judge demo room](#judge-demo-room), then explore the implementation below.
 
 ## What it does
 
