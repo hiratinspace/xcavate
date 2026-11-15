@@ -33,6 +33,8 @@ function similarity(a: string, b: string): number {
   return inter / Math.max(1, A.size + B.size - inter);
 }
 
+const FEE_CATEGORIES = new Set<string>(["termination_fee", "extra_fees", "return_cost"]);
+
 function amountValue(m: string): number {
   return Number.parseFloat(m.replace(/[^0-9.]/g, ""));
 }
@@ -59,7 +61,7 @@ export function ruleChangeBullets(added: string[], removed: string[]): string[] 
       const s = similarity(r, a);
       if (s > bestSim) [best, bestSim] = [i, s];
     });
-    if (best >= 0 && bestSim >= 0.45) {
+    if (best >= 0 && bestSim >= 0.3) {
       pairedAdded.add(best);
       pairs.push([r, added[best]]);
     } else unpairedRemoved.push(r);
@@ -85,7 +87,8 @@ export function ruleChangeBullets(added: string[], removed: string[]): string[] 
   for (const h of newHits) {
     if (oldCats.has(h.category) || seen.has(h.category)) continue;
     seen.add(h.category);
-    const amount = findMoney(h.quote)[0];
+    // Only fees carry their own amount; for other clauses an amount in the sentence is usually the price.
+    const amount = FEE_CATEGORIES.has(h.category) ? findMoney(h.quote)[0] : undefined;
     push(`New: ${CATEGORY_LABEL[h.category].toLowerCase()}${amount ? " of " + amount : ""} (${h.title.toLowerCase()}).`);
   }
 

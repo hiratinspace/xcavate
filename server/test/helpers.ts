@@ -24,6 +24,7 @@ export function request(text: string, extra: Partial<AnalyzeRequest> = {}): Anal
 /** Scriptable LLM for tests: records calls, returns or throws what it is told. */
 export class FakeLlm implements LlmClient {
   readonly provider = "anthropic" as const;
+  readonly model = "fake";
   calls = 0;
   lastInput: LlmPolicyInput[] = [];
   constructor(

@@ -131,7 +131,7 @@ describe("persistence across restarts", () => {
     const path = join(dir, mode + ".db");
     const s1 = openStore(path, mode);
     expect(s1.kind).toBe(mode);
-    await request(createApp({ store: s1, llm: new MockLlm(), config: { rateLimitPerMin: 100, publishClientReports: true } })).post("/v1/analyze").send(VALID);
+    await request(createApp({ store: s1, llm: new FakeLlm(), config: { rateLimitPerMin: 100, publishClientReports: true } })).post("/v1/analyze").send(VALID);
     s1.close();
 
     const s2 = openStore(path, mode);

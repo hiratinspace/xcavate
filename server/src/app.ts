@@ -8,24 +8,29 @@ import { analyzeRouter } from "./routes/analyze.js";
 import { healthRouter } from "./routes/health.js";
 import { rateLimit } from "./routes/rateLimit.js";
 import { reportRouter } from "./routes/report.js";
+import { guardStore } from "./store/index.js";
 import type { Store } from "./store/store.js";
 
 export interface AppDeps {
   store: Store;
   llm: LlmClient;
-  config: Pick<Config, "rateLimitPerMin"> & Partial<Pick<Config, "publishClientReports">>;
+  config: Pick<Config, "rateLimitPerMin"> & Partial<Pick<Config, "publishClientReports" | "llmTimeoutMs" | "trustProxy">>;
 }
 
 /** Express app factory (S-04). Used by src/index.ts and by tests with supertest. */
 export function createApp({ store, llm, config }: AppDeps): express.Express {
   const app = express();
   app.disable("x-powered-by");
+  // Behind a reverse proxy, TRUST_PROXY=<hops> makes req.ip the client address for rate limiting.
+  if (config.trustProxy && config.trustProxy > 0) app.set("trust proxy", config.trustProxy);
   app.use(cors());
   app.use(healthRouter(llm));
   app.use("/v1/analyze", rateLimit(config.rateLimitPerMin));
   app.use(express.json({ limit: LIMITS.maxBodyBytes }));
-  app.use(analyzeRouter({ store, llm, publishShared: config.publishClientReports === true }));
-  app.use(reportRouter(store));
+  app.use(
+    analyzeRouter({ store, llm, publishShared: config.publishClientReports === true, deadlineMs: config.llmTimeoutMs }),
+  );
+  app.use(reportRouter(guardStore(store)));
 
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: "Not found" });

@@ -26,7 +26,8 @@ export function prepareForVerify(text: string, paragraphs: Paragraph[]): Verifia
 
 /**
  * Find where a quote lives: first in the policy the model pointed at, then in the others.
- * Returns the policy position and the paragraph that contains it, or null if it is not in any policy.
+ * Returns the policy position and the single paragraph that contains it, or null when no paragraph
+ * of any policy contains the whole quote.
  */
 export function locateQuote(
   quote: string,
@@ -46,10 +47,7 @@ export function locateQuote(
     if (hinted && hinted.norm.includes(q)) return { policy: i, paragraphIndex: hinted.index };
     const whole = pol.paragraphs.find((p) => p.norm.includes(q));
     if (whole) return { policy: i, paragraphIndex: whole.index };
-    // Spans paragraphs: report the one holding its start.
-    const head = q.slice(0, 40);
-    const start = pol.paragraphs.find((p) => p.norm.includes(head));
-    return { policy: i, paragraphIndex: start ? start.index : hintParagraph };
+    // A quote stitched across paragraphs is not evidence of one clause: keep looking, then reject.
   }
   return null;
 }

@@ -60,7 +60,7 @@ describe("AnthropicLlm", () => {
     expect(out.findings[0].category).toBe("no_refund");
     const body = f.bodies[0];
     expect(body.model).toBe("claude-haiku-5-5");
-    expect(body.max_tokens).toBe(4096);
+    expect(body.max_tokens).toBe(16000);
     expect(body).not.toHaveProperty("temperature");
     expect(body).not.toHaveProperty("top_p");
     expect(body).not.toHaveProperty("top_k");

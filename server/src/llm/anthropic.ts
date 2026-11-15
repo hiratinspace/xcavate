@@ -7,6 +7,10 @@ import type { ChangeInput, LlmCallOptions, LlmClient, LlmPolicyInput } from "./c
 import { CHANGE_SYSTEM_PROMPT, SYSTEM_PROMPT, buildChangeMessage, buildUserMessage } from "./prompt.js";
 import { CHANGE_BULLETS_JSON_SCHEMA, LLM_OUTPUT_JSON_SCHEMA } from "./schema.js";
 
+/** Room for adaptive thinking plus the JSON answer; Haiku 5.5 can spend thousands of tokens thinking. */
+export const ANALYZE_MAX_TOKENS = 16_000;
+export const CHANGE_MAX_TOKENS = 4_096;
+
 export interface AnthropicOptions {
   apiKey: string;
   model: string;
@@ -19,15 +23,17 @@ export interface AnthropicOptions {
 /**
  * Claude via the official SDK with structured outputs (output_config.format).
  * No temperature/top_p/top_k (current models reject them), no prefill, no thinking
- * config (adaptive by default); effort "low" for latency. One retry on invalid output;
+ * config (adaptive by default); effort "low" for latency. One retry on invalid or truncated output;
  * an overall deadline of timeoutMs covers both attempts.
  */
 export class AnthropicLlm implements LlmClient {
   readonly provider = "anthropic" as const;
+  readonly model: string;
   private client: Anthropic;
 
   constructor(private readonly opts: AnthropicOptions) {
     if (!opts.apiKey) throw new LlmError("config", "LLM_API_KEY is not set");
+    this.model = opts.model;
     this.client = new Anthropic({
       apiKey: opts.apiKey,
       timeout: opts.timeoutMs,
@@ -38,7 +44,7 @@ export class AnthropicLlm implements LlmClient {
   }
 
   analyze(policies: LlmPolicyInput[], callOpts?: LlmCallOptions): Promise<LlmOutput> {
-    return this.structured(SYSTEM_PROMPT, buildUserMessage(policies), LLM_OUTPUT_JSON_SCHEMA, LlmOutputSchema, 4096, callOpts);
+    return this.structured(SYSTEM_PROMPT, buildUserMessage(policies), LLM_OUTPUT_JSON_SCHEMA, LlmOutputSchema, ANALYZE_MAX_TOKENS, callOpts);
   }
 
   async summarizeChanges(input: ChangeInput, callOpts?: LlmCallOptions): Promise<string[]> {
@@ -47,7 +53,7 @@ export class AnthropicLlm implements LlmClient {
       buildChangeMessage(input),
       CHANGE_BULLETS_JSON_SCHEMA,
       ChangeBulletsSchema,
-      1024,
+      CHANGE_MAX_TOKENS,
       callOpts,
     );
     return out.bullets.map((b) => b.trim()).filter(Boolean).slice(0, 3);
@@ -69,8 +75,9 @@ export class AnthropicLlm implements LlmClient {
         return await this.once(system, user, jsonSchema, zodSchema, maxTokens, signal);
       } catch (e) {
         const err = toLlmError(e, deadline.aborted);
-        // Retry once, and only for output we could not use; timeouts and API errors fall back at once.
-        if (err.kind !== "invalid_output" || signal.aborted) throw err;
+        // Retry once, and only for output we could not use (invalid, or cut off at max_tokens because
+        // adaptive thinking used the budget); timeouts and API errors fall back at once.
+        if ((err.kind !== "invalid_output" && err.kind !== "max_tokens") || signal.aborted) throw err;
         lastError = err;
       }
     }

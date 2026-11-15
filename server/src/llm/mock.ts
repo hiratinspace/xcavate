@@ -13,6 +13,7 @@ import type { ChangeInput, LlmClient, LlmPolicyInput } from "./client.js";
  */
 export class MockLlm implements LlmClient {
   readonly provider = "mock" as const;
+  readonly model = "mock-rules";
   calls = 0;
 
   async analyze(policies: LlmPolicyInput[]): Promise<LlmOutput> {

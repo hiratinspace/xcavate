@@ -1,7 +1,7 @@
 import { LIMITS } from "@xcavate/shared";
 import type { CancellationInfo, TrialInfo } from "@xcavate/shared";
 import type { Paragraph } from "./split.js";
-import { isNegated } from "./rules.js";
+import { hasAltChannel, isNegated } from "./rules.js";
 import { NUM, clip, findMoney, findPeriod, lpNormalize, splitSentences, toNumber } from "./textutil.js";
 
 /** True when the first occurrence of `word` in `t` is negated in its clause. */
@@ -100,7 +100,8 @@ export function extractCancellation(paragraphs: Paragraph[]): CancellationInfo |
   if (cancelSents.length === 0) return undefined;
 
   const phone = cancelSents.find(
-    (x) => /\b(by (tele)?phone|by calling|call (us|our|customer|the)|telephone)\b/.test(x.t) && !isNegatedSafe(x.t, "phone"),
+    (x) =>
+      /\b(by (tele)?phone|by calling|call (us|our|customer|the)|telephone)\b/.test(x.t) && !isNegatedSafe(x.t, "phone") && !hasAltChannel(x.t),
   );
   const mail = cancelSents.find(
     (x) => /\b(by (postal |certified |registered )?mail|by post|in writing|written (notice|request|letter))\b/.test(x.t) && !/e-?mail/.test(x.t),

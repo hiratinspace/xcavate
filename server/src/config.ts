@@ -11,6 +11,8 @@ export interface Config {
   store: "auto" | "sqlite" | "memory";
   /** Let client POSTs write the shared per-domain report. Off by default: client text is unverified. */
   publishClientReports: boolean;
+  /** Express "trust proxy" hop count for the rate limiter's client IP. 0 = off (default). */
+  trustProxy: number;
 }
 
 export const DEFAULT_MODEL = "claude-haiku-5-5";
@@ -34,5 +36,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     rateLimitPerMin: int(env.RATE_LIMIT_PER_MIN, 30),
     store: store === "sqlite" || store === "memory" ? store : "auto",
     publishClientReports: (env.PUBLISH_CLIENT_REPORTS ?? "").trim().toLowerCase() === "true",
+    trustProxy: Math.min(10, Math.max(0, Number.parseInt(env.TRUST_PROXY ?? "0", 10) || 0)),
   };
 }

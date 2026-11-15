@@ -20,6 +20,8 @@ export interface LlmCallOptions {
 
 export interface LlmClient {
   readonly provider: "mock" | "anthropic";
+  /** Model id, part of the cache key so a model change never serves older results. */
+  readonly model: string;
   /** Findings + trial + cancellation. `paragraphIndex` in findings is the request-wide paragraph id. */
   analyze(policies: LlmPolicyInput[], opts?: LlmCallOptions): Promise<LlmOutput>;
   /** At most 3 plain-English bullets about what changed. */

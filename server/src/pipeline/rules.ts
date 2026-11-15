@@ -42,6 +42,8 @@ interface Ctx {
   t: string;
   /** The regex match in `t`. */
   m: RegExpExecArray;
+  /** Lower-cased, length-preserving normalised paragraph the sentence came from. */
+  para: string;
 }
 
 interface Pattern {
@@ -61,7 +63,7 @@ interface Pattern {
 const NEGATOR = /\b(not|no|never|without|neither|nor|none|nothing|zero|free of|waive[sd]?)\b|n't\b/;
 const CONDITIONAL = /\b(if|unless|when|until|should)\b/;
 const SUFFIX_NEGATION =
-  /^[^,;:.]{0,25}?\b(does not|do not|doesn't|don't|will not|won't|shall not|is not|isn't|are not|aren't|never)\b\s+(apply|applies|be charged|be applied|be deducted|charged|required)|^\s*(is|are|will be|has been|have been)\s+waived\b|^\s*:?\s*(none|n\/a)\b/;
+  /^[^,;:.]{0,25}?\b(does not|do not|doesn't|don't|will not|won't|shall not|is not|isn't|are not|aren't|never)\b\s+(apply|applies|be charged|be applied|be deducted|charged|required)|^\s*(is|are|will be|has been|have been)\s+waived\b|^\s*:?\s*(none|n\/a)\b|^\s*(is|are)\s+(turned off|switched off|disabled|off)\b|^[^,;:.]{0,25}?\bwill (not )?be withheld\b/;
 
 const HARD_BOUNDARY = /[;:()]|\b(but|however|although|whereas|except)\b/g;
 const SOFT_BOUNDARY = /,|\b(and|or)\b/g;
@@ -126,6 +128,9 @@ function priceWithPeriod(c: Ctx): string | undefined {
   return p ? m + " per " + p : m;
 }
 
+const TRIAL_VERB =
+  /\b(automatic(ally)?|will be (charged|billed)|we will charge|you will pay|converts?|convert(ed)? (in)?to|becomes? a paid|be charged|be billed|start(s)? (charging|billing))\b/g;
+
 const YEARLY = /\b(annual(ly)?|yearly|each year|every year|per year|12-month|twelve-month|one-year|1-year)\b/;
 const NO_REMINDER = /without (prior |advance |any )?(notice|reminder|notifying|notification)|no (reminder|notice) (will be|is) (sent|given)/;
 const AUTO_CHARGE = /\b(automatic(ally)?|will be (charged|billed)|we will charge|unless you cancel|charged (to|on) (your|the) (card|payment method))\b/;
@@ -143,6 +148,25 @@ function noticeDays(t: string): number | undefined {
 const PHONE_OR_MAIL =
   /\b(by (tele)?phone|by calling|call (us|our|customer|the)|telephone|phone (call|line|number)|by (postal |certified |registered )?mail|in writing|written (notice|request|letter)|by post\b|certified letter)/;
 const CANCEL = /\bcancel(l?ation|l?ations|l?ed|l?ing|s)?\b|\bterminat(e|ion)\b/;
+
+/** Self-serve or written-online ways to cancel. Bare "your account" is not one ("cancel your account, call us"). */
+const ALT_CHANNEL =
+  /\b(online|website|web site|web form|webpage|in (the|our) app|mobile app|in-app|(in|from|through|via|on) (your|the|my) account( page| settings)?|account (settings|page|dashboard)|(in|on|under) (the )?settings|settings page|click(ing)?|e-?mail(ing)?|chat(ting)?|self-serve|cancel button|one click)\b/g;
+
+/** True when `t` offers a non-phone, non-mail way to cancel that is not itself denied ("cannot cancel online"). */
+export function hasAltChannel(t: string): boolean {
+  ALT_CHANNEL.lastIndex = 0;
+  for (let m = ALT_CHANNEL.exec(t); m; m = ALT_CHANNEL.exec(t)) {
+    const before = t.slice(Math.max(0, m.index - 30), m.index);
+    if (/\b(cannot|can't|can not|unable to|not able to|isn't possible|no) (be )?(cancel(l?ed)?|cancell?ation)? ?$/.test(before)) continue;
+    if (!isNegated(t, m.index, m.index + m[0].length)) return true;
+  }
+  return false;
+}
+
+/** Wording that makes phone or mail the only route. */
+const EXPLICIT_ONLY =
+  /\b(only|must|solely|exclusively|required to|need to|have to)\b|\b(cannot|can't|can not|unable to)( be)? cancel(l?ed)? online\b|\bnot (available|possible) online\b/;
 const SUBSCRIPTION_CONTEXT = /\b(subscription|membership|plan|account|service|contract|agreement)\b/;
 
 /** Fees and refunds inside a dispute-resolution clause are about arbitration costs, not the purchase. */
@@ -173,7 +197,15 @@ const PATTERNS: Pattern[] = [
     rule: "trial-then-charge",
     re: /\b(free trial|trial period|trial|introductory (period|offer|price)|promotional period)\b[^.]{0,160}?\b(automatic(ally)?|will be (charged|billed)|we will charge|you will pay|converts?|convert(ed)? (in)?to|becomes? a paid|be charged|be billed|start(s)? (charging|billing))\b/,
     negatable: false,
-    when: (c) => !/\b(no|not|never) (be )?(charged|billed)\b[^.]{0,40}(trial|free)|won't be charged (during|for) the trial\b[^.]*$/.test(c.t) || AUTO_CHARGE.test(c.t),
+    // The charge/convert verb must not be denied ("you will not be charged automatically", "will not convert").
+    when: (c) => {
+      const from = c.m.index;
+      TRIAL_VERB.lastIndex = from;
+      for (let v = TRIAL_VERB.exec(c.t); v; v = TRIAL_VERB.exec(c.t)) {
+        if (!isNegated(c.t, v.index, v.index + v[0].length)) return true;
+      }
+      return false;
+    },
     severity: (c) => (AUTO_CHARGE.test(c.t) || /\bconvert/.test(c.t) ? "high" : "medium"),
     text: (c) => {
       const days = new RegExp(NUM + "[- ]day").exec(c.t);
@@ -209,17 +241,18 @@ const PATTERNS: Pattern[] = [
     category: "cancellation_friction",
     rule: "phone-or-mail",
     re: PHONE_OR_MAIL,
-    when: (c) =>
-      CANCEL.test(c.t) &&
-      !/\b(or|and) (by )?(online|in your account|in the app|through your account|via your account|chat|chatting|live chat|e-?mail(ing)?)\b/.test(c.t),
-    severity: () => "high",
+    // Not phone/mail-only when the sentence offers another channel; when only the paragraph does,
+    // fire only for explicit "must/only" wording.
+    when: (c) => CANCEL.test(c.t) && !hasAltChannel(c.t) && (EXPLICIT_ONLY.test(c.t) || !hasAltChannel(c.para)),
+    severity: (c) => (EXPLICIT_ONLY.test(c.t) || (noticeDays(c.t) ?? 0) >= 30 ? "high" : "medium"),
     text: (c) => {
       const n = noticeDays(c.t);
       const mail = /mail|writing|written|post\b|letter/.test(c.m[0]);
+      const only = EXPLICIT_ONLY.test(c.t);
       return {
-        title: (mail ? "Cancel by mail only" : "Cancel by phone only") + (n ? ", " + n + " days' notice" : ""),
+        title: (mail ? "Cancel by mail" : "Cancel by phone") + (only ? " only" : "") + (n ? ", " + n + " days' notice" : ""),
         summary:
-          (mail ? "You can only cancel in writing by mail" : "You can only cancel by calling") +
+          (mail ? "You have to cancel in writing by mail" : "You have to call to cancel") +
           (n ? ", and you must give " + n + " days' notice." : "."),
       };
     },
@@ -275,6 +308,8 @@ const PATTERNS: Pattern[] = [
     when: (c) => {
       const before = c.t.slice(0, c.m.index);
       if (ARBITRATION_CONTEXT.test(c.t)) return false;
+      // "no refunds will be withheld" says the opposite.
+      if (/^[^.]{0,30}\bwithh(e|o)ld/.test(c.t.slice(c.m.index + c.m[0].length))) return false;
       // Gift cards and shipping being final or non-refundable is normal; the purchase itself is what matters.
       if (/\b(shipping|delivery|postage|gift wrap|gift cards?|customs|duties)\b/.test(before)) return false;
       // "Returns that do not comply ... may not be eligible for a refund": a condition, not a policy.
@@ -424,6 +459,7 @@ function quoteFor(c: Ctx): string {
 /** All rule hits in one paragraph. */
 export function matchParagraph(p: Paragraph): RuleHit[] {
   const hits: RuleHit[] = [];
+  const para = lpNormalize(p.text);
   for (const s of splitSentences(p.text)) {
     // Headings ("Restocking fee") are not clauses; the sentence that follows them is.
     if (wordCount(s) < 5) continue;
@@ -431,7 +467,7 @@ export function matchParagraph(p: Paragraph): RuleHit[] {
     for (const pat of PATTERNS) {
       const m = pat.re.exec(t);
       if (!m) continue;
-      const c: Ctx = { s, t, m };
+      const c: Ctx = { s, t, m, para };
       if (pat.negatable !== false && isNegated(t, m.index, m.index + m[0].length)) continue;
       if (pat.when && !pat.when(c)) continue;
       const txt = pat.text(c);

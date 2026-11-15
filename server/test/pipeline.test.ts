@@ -52,12 +52,12 @@ describe("runAnalysis", () => {
   it("keeps a high rules flag when the LLM reports nothing, and an LLM-only finding when verified", async () => {
     const llm = new FakeLlm((input) => ({
       findings: [
-        { category: "price_change", severity: "high", title: "Prices may rise", summary: "They can raise prices.", costImpact: null, paragraphIndex: input[0].paragraphs.at(-1)!.id, quote: "Membership pricing is reviewed each spring" },
+        { category: "price_change", severity: "high", title: "Prices may rise", summary: "They can raise prices.", costImpact: null, paragraphIndex: input[0].paragraphs.at(-1)!.id, quote: "A new price for every membership is announced each spring" },
       ],
       trial: null,
       cancellation: null,
     }));
-    const r = await runAnalysis(request(policyText(NO_REFUND, "Membership pricing is reviewed each spring and refunds follow the rules above.")), {
+    const r = await runAnalysis(request(policyText(NO_REFUND, "A new price for every membership is announced each spring, and refunds follow the rules above.")), {
       store: memStore(),
       llm,
     });
@@ -68,11 +68,11 @@ describe("runAnalysis", () => {
 
   it("caps model severities in code", async () => {
     const llm = new FakeLlm((input) => ({
-      findings: [{ category: "arbitration", severity: "high", title: "Arbitration", summary: "No court.", costImpact: null, paragraphIndex: input[0].paragraphs[1].id, quote: "Disputes are settled privately by a neutral person chosen by us" }],
+      findings: [{ category: "arbitration", severity: "high", title: "Arbitration", summary: "No court.", costImpact: null, paragraphIndex: input[0].paragraphs[1].id, quote: "Disputes go to arbitration before a neutral person chosen by us" }],
       trial: null,
       cancellation: null,
     }));
-    const r = await runAnalysis(request(policyText("Disputes are settled privately by a neutral person chosen by us, and refunds are handled per section 2.")), {
+    const r = await runAnalysis(request(policyText("Disputes go to arbitration before a neutral person chosen by us, and refunds are handled per section 2.")), {
       store: memStore(),
       llm,
     });
